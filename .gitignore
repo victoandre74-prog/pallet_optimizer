@@ -1,0 +1,22 @@
+# Python cache
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environnements
+venv/
+.venv/
+.env
+
+# Profiling
+*.prof
+
+# Fichiers generes par l optimiseur
+intermediate/
+output/
+
+# OS
+.DS_Store
+Thumbs.db
