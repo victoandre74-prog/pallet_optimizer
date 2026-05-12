@@ -133,22 +133,22 @@ class OptimizationParameters:
     cost_multi_pallet_count: float = 10.0
 
     # ── Large Neighbourhood Search — mono-client pass ─────────────────────────
-    lns_mono_time_limit: float = 100.0      # seconds
+    lns_mono_time_limit: float = 5.0      # seconds
     lns_mono_small_box_volume: float = 408000.0  # cm³ — boxes below this volume are extracted from surviving pallets each iteration
     lns_mono_repair_top_k: int = 3              # pick randomly from top-k valid positions (EP × orientation) during repair
-    lns_mono_max_iterations: int = 500
+    lns_mono_max_iterations: int = 300
     lns_mono_random_seed: int = 42
 
     # ── Large Neighbourhood Search — multi-client pass ─────────────────────────
-    lns_multi_time_limit: float = 40.0       # seconds
+    lns_multi_time_limit: float = 5.0       # seconds
     lns_multi_max_iterations: int = 300
     lns_multi_random_seed: int = 42
     lns_multi_destroy_ratio: float = 0.33        # fraction of least-filled pallets destroyed each iteration (at least 1)
     lns_multi_repair_top_k: int   = 3             # pick randomly from top-k valid positions during repair
 
     # ── Post-processing LNS — budget ───────────────────────────────────────────
-    pp_time_limit:     float = 20.0    # wall-clock seconds per group
-    pp_max_iterations: int   = 250      # hard cap per group; split 50/50 fill/P2 phase
+    pp_time_limit:     float = 5.0    # wall-clock seconds per group
+    pp_max_iterations: int   = 125      # hard cap per group; split 50/50 fill/P2 phase
     pp_top_k:          int   = 2        # candidate pool for placement and donor/recip selection
     pp_random_seed:    int   = 7        # reproducibility
 
