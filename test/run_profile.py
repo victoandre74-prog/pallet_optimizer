@@ -17,10 +17,11 @@ import io
 import sys
 import os
 
-# ── Path setup identique à main.py ───────────────────────────────────────────
-_DIR = os.path.dirname(os.path.abspath(__file__))
-if _DIR not in sys.path:
-    sys.path.insert(0, _DIR)
+# ── Path setup ────────────────────────────────────────────────────────────────
+_DIR  = os.path.dirname(os.path.abspath(__file__))   # .../pallet_optimizer/test/
+_BASE = os.path.dirname(_DIR)                         # .../pallet_optimizer/
+if _BASE not in sys.path:
+    sys.path.insert(0, _BASE)
 
 from config.parameters import OptimizationParameters
 from file_io.csv_reader import read_boxes_from_csv
@@ -28,9 +29,9 @@ from optimizer.pallet_optimizer import optimize_palletization
 from heuristics.post_processing import postprocess
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-INPUT_CSV   = r"input\tournee_type2026\tournee_type2026.csv"
-OUTPUT_FAKE = r"output\profile_run_results.csv"   # chemin fictif, le fichier n'est pas écrit
-PROF_FILE   = "profile_output.prof"
+INPUT_CSV   = os.path.join(_BASE, r"input\tournee_type2026\tournee_type2026.csv")
+OUTPUT_FAKE = os.path.join(_BASE, r"output\profile_run_results.csv")
+PROF_FILE   = os.path.join(_DIR, "profile_output.prof")
 TOP_N       = 20
 
 params = OptimizationParameters()

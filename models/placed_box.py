@@ -7,7 +7,7 @@ needed for constraint checking, so the original Box registry does not
 need to be consulted repeatedly.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from models.orientation import Orientation
 
@@ -58,19 +58,19 @@ class PlacedBox:
     # Placement order (1-based) within the pallet — set after packing
     sequence: int = 0
 
+    # Pre-computed max coordinates — set once at creation, never mutated.
+    # PlacedBox is always created via make_placed_box(); x/y/z are never
+    # reassigned after construction, so these stay consistent.
+    x_max: float = field(init=False)
+    y_max: float = field(init=False)
+    z_max: float = field(init=False)
+
+    def __post_init__(self):
+        self.x_max = self.x + self.length
+        self.y_max = self.y + self.width
+        self.z_max = self.z + self.height
+
     # ── Geometry helpers ───────────────────────────────────────────────────────
-
-    @property
-    def x_max(self) -> float:
-        return self.x + self.length
-
-    @property
-    def y_max(self) -> float:
-        return self.y + self.width
-
-    @property
-    def z_max(self) -> float:
-        return self.z + self.height
 
     @property
     def base_area(self) -> float:

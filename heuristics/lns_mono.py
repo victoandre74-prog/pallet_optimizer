@@ -235,8 +235,10 @@ def _lns_pass(
     best_pallets = copy.deepcopy(initial_pallets)
     best_cost    = cost_fn(best_pallets, params)
 
-    start_time = time.time()
-    iteration  = 0
+    start_time            = time.time()
+    iteration             = 0
+    improvement_count     = 0
+    last_improvement_iter = 0
 
     print(f"{label} Starting. Cost: {best_cost:.2f}, pallets: {len(best_pallets)}")
 
@@ -314,14 +316,22 @@ def _lns_pass(
 
         new_cost = cost_fn(new_pallets, params)
         if new_cost < best_cost:
-            best_cost    = new_cost
-            best_pallets = copy.deepcopy(new_pallets)
+            best_cost             = new_cost
+            best_pallets          = copy.deepcopy(new_pallets)
+            improvement_count    += 1
+            last_improvement_iter = iteration
             print(f"{label} iter {iteration:4d}: improved cost → {best_cost:.2f}, "
                   f"pallets: {len(best_pallets)}")
 
-    elapsed = time.time() - start_time
-    print(f"{label} Done. {iteration} iters in {elapsed:.1f}s. "
-          f"Cost: {best_cost:.2f}, pallets: {len(best_pallets)}")
+    elapsed    = time.time() - start_time
+    stagnation = iteration - last_improvement_iter
+    stag_pct   = stagnation / max(1, iteration) * 100
+    print(
+        f"{label} Done. {iteration} iters in {elapsed:.1f}s | "
+        f"improvements: {improvement_count} | "
+        f"stagnation: {stagnation} iters ({stag_pct:.0f}%) | "
+        f"pallets: {len(initial_pallets)}→{len(best_pallets)}"
+    )
 
     return best_pallets
 

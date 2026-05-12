@@ -379,6 +379,8 @@ def _lns_group(
     start    = time.time()
     improved = 0
     skipped  = 0
+    fill_last_improvement_iter = 0
+    fill_iters_run             = 0
 
     if delta > _FILL_EQUALIZATION_THRESHOLD:
         # Use half the iteration budget for fill equalization
@@ -443,23 +445,33 @@ def _lns_group(
                 fill_cost = new_cost
                 best = current
                 improved += 1
+                fill_last_improvement_iter = iteration
                 new_fills = [p.volumetric_fill_ratio for p in best]
                 print(f"{label} fill iter {iteration:4d}: "
                       f"cost {new_cost:.4f} (Δ={d:.4f})  "
                       f"moved {k} P1  fills=[{', '.join(f'{f:.1%}' for f in new_fills)}]")
 
-        elapsed_fill = time.time() - start
-        print(f"{label} fill equalization done — {improved} improvements "
-              f"({skipped} skipped) in {elapsed_fill:.1f}s")
+            fill_iters_run = iteration
+
+        elapsed_fill  = time.time() - start
+        fill_stag     = fill_iters_run - fill_last_improvement_iter
+        fill_stag_pct = fill_stag / max(1, fill_iters_run) * 100
+        print(
+            f"{label} fill equalization done — {improved} improvements "
+            f"({skipped} skipped) in {elapsed_fill:.1f}s | "
+            f"stagnation: {fill_stag} iters ({fill_stag_pct:.0f}%)"
+        )
 
     # ── Step 4: P2 placement iterations ──────────────────────────────────────
     p1_snapshot = copy.deepcopy(best)   # save P1-only state for re-trials
     best_cost   = original_cost         # baseline = original with P2 in place
     best        = original              # start from original; only replace on improvement
 
-    p2_improved = 0
-    p2_skipped  = 0
-    p2_start    = time.time()
+    p2_improved               = 0
+    p2_skipped                = 0
+    p2_last_improvement_iter  = 0
+    p2_iters_run              = 0
+    p2_start                  = time.time()
 
     for iteration in range(1, params.pp_max_iterations + 1):
         if time.time() - p2_start > params.pp_time_limit:
@@ -470,6 +482,7 @@ def _lns_group(
 
         if not _place_p2_pool(p2_pool, trial, params, rng):
             p2_skipped += 1
+            p2_iters_run = iteration
             continue
 
         new_cost = compute_pp_cost(trial, params)
@@ -478,18 +491,29 @@ def _lns_group(
             best_cost = new_cost
             best = trial
             p2_improved += 1
+            p2_last_improvement_iter = iteration
             if p2_improved <= 10 or p2_improved % 50 == 0:
                 print(f"{label} P2 iter {iteration:4d}: "
                       f"cost {new_cost:.4f} (Δ={d:.4f})")
 
-    elapsed_p2 = time.time() - p2_start
+        p2_iters_run = iteration
+
+    elapsed_p2  = time.time() - p2_start
+    p2_stag     = p2_iters_run - p2_last_improvement_iter
+    p2_stag_pct = p2_stag / max(1, p2_iters_run) * 100
     if p2_improved == 0:
-        print(f"{label} P2 done — no improvement found, keeping original.  "
-              f"({p2_skipped} skipped) in {elapsed_p2:.1f}s")
+        print(
+            f"{label} P2 done — no improvement found, keeping original. "
+            f"({p2_skipped} skipped) in {elapsed_p2:.1f}s | "
+            f"stagnation: {p2_stag} iters ({p2_stag_pct:.0f}%)"
+        )
     else:
-        print(f"{label} P2 done — {p2_improved} improvements "
-              f"({p2_skipped} skipped) in {elapsed_p2:.1f}s.  "
-              f"Final cost={best_cost:.2f}")
+        print(
+            f"{label} P2 done — {p2_improved} improvements "
+            f"({p2_skipped} skipped) in {elapsed_p2:.1f}s | "
+            f"stagnation: {p2_stag} iters ({p2_stag_pct:.0f}%) | "
+            f"Final cost={best_cost:.2f}"
+        )
 
     # ── Safety: verify no box was lost ───────────────────────────────────────
     original_ids = {pb.box_id for p in original for pb in p.boxes}
@@ -907,14 +931,19 @@ def postprocess(
 
     # ── Safety checks ─────────────────────────────────────────────────────────
     n_multi_out = sum(1 for p in result if p.is_multi_client)
-    if n_multi_out != n_multi_in:
-        print(f"\n[Post] WARNING: multi-client count {n_multi_in} → {n_multi_out}. "
+    if n_multi_out > n_multi_in:
+        print(f"\n[Post] WARNING: multi-client count grew {n_multi_in} → {n_multi_out}. "
               f"Reverting affected pallets.")
         orig_by_id = {p.id: p for p in pallets}
+        orig_multi_ids = {p.id for p in pallets if p.is_multi_client}
         for i, p in enumerate(result):
-            orig = orig_by_id.get(p.id)
-            if orig and p.is_multi_client != orig.is_multi_client:
-                result[i] = orig
+            if p.id in orig_multi_ids:
+                orig = orig_by_id.get(p.id)
+                if orig:
+                    result[i] = orig
+    elif n_multi_out < n_multi_in:
+        print(f"\n[Post] INFO: multi-client count reduced {n_multi_in} → {n_multi_out} "
+              f"(clients better separated — keeping improvement).")
 
     if len(result) > n_pallets_in:
         print(f"\n[Post] WARNING: pallet count grew {n_pallets_in} → {len(result)}. "
