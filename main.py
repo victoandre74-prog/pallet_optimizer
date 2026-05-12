@@ -229,6 +229,7 @@ def _process_one(
         print(f"  enable_multi_client        : {params.enable_multi_client}")
         print(f"  min_filling_ratio          : {params.min_filling_ratio}")
         print(f"  multi_client_minimum_ratio : {params.multi_client_minimum_ratio}")
+        print(f"  multi_client_maximum_ratio : {params.multi_client_maximum_ratio}")
         print(f"  --- LNS mono-client ---")
         print(f"  lns_mono_time_limit        : {params.lns_mono_time_limit} s")
         print(f"  lns_mono_small_box_volume  : {params.lns_mono_small_box_volume} cm³")
@@ -406,6 +407,7 @@ def _write_execution_summary(
     input_dir: str,
     results: list,
     ts: str,
+    total_time_s: float = 0.0,
 ) -> Path:
     """
     Writes a human-readable summary of a full batch run to
@@ -442,6 +444,7 @@ def _write_execution_summary(
     lines.append(f"  Total files : {total}")
     lines.append(f"  Succeeded   : {n_ok}")
     lines.append(f"  Failed      : {n_err}")
+    lines.append(f"  Total time  : {total_time_s:.1f}s")
     lines.append(sep)
     lines.append("")
 
@@ -486,6 +489,7 @@ def main():
 
     print(f"[Batch] {len(input_files)} file(s) to process from '{args.input_dir}'")
 
+    t_batch_start = time.time()
     failed  = 0
     results = []  # collected per-file outcomes for the summary file
     for i, input_path in enumerate(input_files, start=1):
@@ -513,7 +517,7 @@ def main():
     try:
         from datetime import datetime
         ts           = datetime.now().strftime("%Y%m%d_%H%M%S")
-        summary_path = _write_execution_summary(output_dir, args.input_dir, results, ts)
+        summary_path = _write_execution_summary(output_dir, args.input_dir, results, ts, time.time() - t_batch_start)
         print(f"[Summary] Execution summary written to: {summary_path}")
     except Exception as e:
         print(f"[Summary] Warning: could not write execution summary: {e}")
