@@ -9,8 +9,8 @@ Usage:
     python run_sweep.py
 
 Output:
-    sweep_results.csv   — machine-readable results (written to test/ folder)
-    sweep_results.xlsx  — formatted report for analysis (written to test/ folder)
+    sweep_results.csv   — machine-readable results (written to experiments/ folder)
+    sweep_results.xlsx  — formatted report for analysis (written to experiments/ folder)
 """
 
 import copy
@@ -25,7 +25,7 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 # ── Path setup ────────────────────────────────────────────────────────────────
-_DIR  = os.path.dirname(os.path.abspath(__file__))   # .../pallet_optimizer/test/
+_DIR  = os.path.dirname(os.path.abspath(__file__))   # .../pallet_optimizer/experiments/
 _BASE = os.path.dirname(_DIR)                         # .../pallet_optimizer/
 if _BASE not in sys.path:
     sys.path.insert(0, _BASE)
@@ -85,9 +85,6 @@ SWEEP_GRID = [
 
 # ── Log parsing ────────────────────────────────────────────────────────────────
 
-# Patterns for the new "Done." lines:
-#   [LNS-mono|client=X] Done. N iters in T.Ts | improvements: I | stagnation: S iters (P%) | pallets: A→B
-#   [LNS-multi]         Done. N iters in T.Ts | improvements: I | stagnation: S iters (P%) | pallets: A→B
 _RE_LNS_DONE = re.compile(
     r"\[LNS-(?P<kind>mono|multi)[^\]]*\] Done\.\s+"
     r"(?P<iters>\d+) iters in (?P<elapsed>[\d.]+)s"
@@ -96,21 +93,11 @@ _RE_LNS_DONE = re.compile(
     r" \| pallets: (?P<pal_before>\d+)→(?P<pal_after>\d+)"
 )
 
-# Pattern for PP phases:
-#   [Post|…] fill equalization done — I improvements (S skipped) in T.Ts | stagnation: S iters (P%)
-#   [Post|…] P2 done — I improvements (S skipped) in T.Ts | stagnation: S iters (P%) | Final cost=C
 _RE_PP_FILL_DONE = re.compile(
     r"\[Post[^\]]*\] fill equalization done — (?P<improvements>\d+) improvements"
     r" \((?P<skipped>\d+) skipped\) in (?P<elapsed>[\d.]+)s"
     r" \| stagnation: (?P<stagnation>\d+) iters \((?P<stag_pct>[\d.]+)%\)"
 )
-_RE_PP_P2_DONE = re.compile(
-    r"\[Post[^\]]*\] P2 done — (?P<improvements>\d+|no improvement found, keeping original\.) ?"
-    r"(?:improvements )?"
-    r"\((?P<skipped>\d+) skipped\) in (?P<elapsed>[\d.]+)s"
-    r" \| stagnation: (?P<stagnation>\d+) iters \((?P<stag_pct>[\d.]+)%\)"
-)
-# Simpler P2 pattern for "no improvement" variant
 _RE_PP_P2_DONE_NONE = re.compile(
     r"\[Post[^\]]*\] P2 done — no improvement found.*?"
     r"in (?P<elapsed>[\d.]+)s"
@@ -122,7 +109,6 @@ _RE_PP_P2_DONE_OK = re.compile(
     r" \| stagnation: (?P<stagnation>\d+) iters \((?P<stag_pct>[\d.]+)%\)"
 )
 
-# Final pallets count from optimizer: "Result : N pallet(s)"
 _RE_RESULT = re.compile(r"Result\s*:\s*(\d+) pallet\(s\)")
 
 
@@ -130,7 +116,6 @@ def _parse_log(log: str) -> dict:
     """Extracts metrics from captured stdout."""
     stats: dict = {}
 
-    # LNS-mono passes (aggregate across all clients)
     mono_iters = mono_improvements = mono_stagnation = mono_elapsed = 0
     mono_pal_before = mono_pal_after = 0
     for m in _RE_LNS_DONE.finditer(log):
@@ -149,7 +134,6 @@ def _parse_log(log: str) -> dict:
     stats["mono_elapsed_s"]    = round(mono_elapsed, 1)
     stats["mono_pal_delta"]    = mono_pal_before - mono_pal_after
 
-    # LNS-multi pass
     multi_iters = multi_improvements = multi_stagnation = multi_elapsed = 0
     multi_pal_before = multi_pal_after = 0
     for m in _RE_LNS_DONE.finditer(log):
@@ -168,9 +152,7 @@ def _parse_log(log: str) -> dict:
     stats["multi_elapsed_s"]    = round(multi_elapsed, 1)
     stats["multi_pal_delta"]    = multi_pal_before - multi_pal_after
 
-    # PP — fill equalization (aggregate all groups)
     fill_improvements = fill_stagnation = fill_elapsed = 0
-    fill_iters_total  = 0
     for m in _RE_PP_FILL_DONE.finditer(log):
         fill_improvements += int(m.group("improvements"))
         fill_stagnation   += int(m.group("stagnation"))
@@ -180,7 +162,6 @@ def _parse_log(log: str) -> dict:
     stats["pp_fill_stagnation"]   = fill_stagnation
     stats["pp_fill_elapsed_s"]    = round(fill_elapsed, 1)
 
-    # PP — P2 placement (aggregate all groups)
     p2_improvements = p2_stagnation = p2_elapsed = 0
     for m in _RE_PP_P2_DONE_OK.finditer(log):
         p2_improvements += int(m.group("improvements"))
@@ -194,7 +175,6 @@ def _parse_log(log: str) -> dict:
     stats["pp_p2_stagnation"]   = p2_stagnation
     stats["pp_p2_elapsed_s"]    = round(p2_elapsed, 1)
 
-    # Final pallet count (last "Result : N pallet(s)" line)
     result_matches = _RE_RESULT.findall(log)
     stats["final_pallets"] = int(result_matches[-1]) if result_matches else 0
 
@@ -226,15 +206,11 @@ _FIELDNAMES = [
     "lns_multi_time", "lns_multi_iters_max",
     "pp_time", "pp_iters_max",
     "total_runtime_s", "final_pallets",
-    # Mono
     "mono_iters", "mono_improvements", "mono_stagnation", "mono_stag_pct",
     "mono_elapsed_s", "mono_pal_delta",
-    # Multi
     "multi_iters", "multi_improvements", "multi_stagnation", "multi_stag_pct",
     "multi_elapsed_s", "multi_pal_delta",
-    # PP fill
     "pp_fill_improvements", "pp_fill_stagnation", "pp_fill_elapsed_s",
-    # PP P2
     "pp_p2_improvements", "pp_p2_stagnation", "pp_p2_elapsed_s",
 ]
 
@@ -261,17 +237,14 @@ def _write_xlsx(rows: list[dict]) -> None:
     ws = wb.active
     ws.title = "Sweep Results"
 
-    # Header style
     hdr_font = Font(bold=True, color="FFFFFF")
     hdr_fill = PatternFill("solid", fgColor="2F4F8F")
 
-    # Group fill colours
     group_fills = {
         "baseline": PatternFill("solid", fgColor="D9E1F2"),
         "config":   PatternFill("solid", fgColor="F2F2F2"),
     }
 
-    # Section headers (multi-column spans)
     _SECTIONS = [
         ("Config", 7),
         ("Run", 2),
@@ -293,14 +266,12 @@ def _write_xlsx(rows: list[dict]) -> None:
         cell.alignment = Alignment(horizontal="center")
         col += sec_width
 
-    # Column headers (row 2)
     for c, name in enumerate(_FIELDNAMES, 1):
         cell = ws.cell(row=2, column=c, value=name)
         cell.font  = hdr_font
         cell.fill  = hdr_fill
         cell.alignment = Alignment(horizontal="center", wrap_text=True)
 
-    # Data rows
     for r, row in enumerate(rows, 3):
         is_baseline = row["config_name"] == "baseline"
         fill = group_fills["baseline"] if is_baseline else group_fills["config"]
@@ -310,13 +281,11 @@ def _write_xlsx(rows: list[dict]) -> None:
                 cell.fill = fill
                 cell.font = Font(bold=True)
 
-    # Auto-width columns
     for c, name in enumerate(_FIELDNAMES, 1):
         max_len = max(len(name), *(len(str(row.get(name, ""))) for row in rows))
         ws.column_dimensions[get_column_letter(c)].width = min(max_len + 2, 25)
 
     ws.freeze_panes = "A3"
-
     wb.save(XLSX_OUT)
     print(f"[Sweep] XLSX → {XLSX_OUT}")
 
@@ -336,7 +305,6 @@ if __name__ == "__main__":
         print(f"[Sweep] Config: {name}")
         print(f"{'='*60}")
 
-        # Build params for this config
         params = copy.deepcopy(baseline_params)
         for key, val in cfg.items():
             if key == "name":
@@ -350,12 +318,8 @@ if __name__ == "__main__":
         try:
             pallets, log = _run_pipeline(params)
             total_runtime = round(time.time() - t0, 1)
-
-            # Print captured log so progress is visible
             print(log, end="")
-
             stats = _parse_log(log)
-            # Override final_pallets with direct count (more reliable)
             stats["final_pallets"] = sum(len(p.boxes) > 0 for p in pallets)
 
         except Exception as exc:

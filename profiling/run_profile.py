@@ -18,7 +18,7 @@ import sys
 import os
 
 # ── Path setup ────────────────────────────────────────────────────────────────
-_DIR  = os.path.dirname(os.path.abspath(__file__))   # .../pallet_optimizer/test/
+_DIR  = os.path.dirname(os.path.abspath(__file__))   # .../pallet_optimizer/profiling/
 _BASE = os.path.dirname(_DIR)                         # .../pallet_optimizer/
 if _BASE not in sys.path:
     sys.path.insert(0, _BASE)
