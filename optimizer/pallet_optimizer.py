@@ -251,7 +251,7 @@ def optimize_palletization(
 
     # ── Phase 2: LNS on mono-client pallets ───────────────────────────────────
     _phase_header(2, "LNS improvement (mono-client)")
-    if parameters.lns_mono_time_limit > 0 and len(pallets) > 1:
+    if parameters.lns_mono_time_per_pallet > 0 and len(pallets) > 1:
         pallets = lns_mono_client(pallets, boxes, parameters)
     else:
         print("  Skipped (single pallet or time_limit=0).")
@@ -525,7 +525,7 @@ def optimize_palletization(
     multi_count = sum(1 for p in pallets if p.is_multi_client)
     pool_size   = multi_count + len(phase3_leftover_mono)
 
-    if parameters.lns_multi_time_limit > 0 and pool_size > 1:
+    if parameters.lns_multi_time_per_pallet > 0 and pool_size > 1:
         if phase3_leftover_mono:
             print(f"  Including {len(phase3_leftover_mono)} Phase-3 leftover "
                   f"mono pallet(s) in the LNS pool.")

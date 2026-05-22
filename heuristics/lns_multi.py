@@ -350,10 +350,15 @@ def lns_multi_client(
         print(f"[LNS-multi] Pool: {len(pool)} pallet(s) "
               f"({len(pool) - len(extra_ids)} multi + {len(extra_ids)} Phase-3 leftover mono).")
 
+    pool_size   = len(pool)
+    time_budget = max(1.0, pool_size * params.lns_multi_time_per_pallet)
+    iter_budget = max(1,   pool_size * params.lns_multi_iter_per_pallet)
+    print(f"[LNS-multi] Budget: {pool_size} palettes × "
+          f"{params.lns_multi_time_per_pallet}s = {time_budget:.1f}s / {iter_budget} iters")
     improved_pool = _lns_pass(
         pool, box_lookup, params, rng,
-        time_limit=params.lns_multi_time_limit,
-        max_iterations=params.lns_multi_max_iterations,
+        time_limit=time_budget,
+        max_iterations=iter_budget,
         label="[LNS-multi]",
         cost_fn=compute_cost_multi,
     )

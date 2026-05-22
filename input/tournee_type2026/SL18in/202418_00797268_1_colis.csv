@@ -1,0 +1,6 @@
+id;priority;length;width;height;weight;allowed_orientations;client_id;stackable;designation;location
+406412009000201;1;122.3;87.1;62.2;51.7;HWL,WHL;406412;True;;
+406412009000101;1;122.3;87.1;62.2;51.7;HWL,WHL;406412;True;;
+406412009001201;2;87.0;16.0;4.8;1.8;all;406412;True;;
+406412009000301;1;102.3;87.1;62.2;45.1;HWL,WHL;406412;True;;
+406412009001301;2;87.0;16.0;4.8;1.8;all;406412;True;;

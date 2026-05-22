@@ -51,35 +51,37 @@ SWEEP_GRID = [
     # ── Référence ───────────────────────────────────────────────────────────────
     {"name": "baseline"},
 
-    # ── Groupe A : mono LNS time budget ─────────────────────────────────────────
-    {"name": "mono_t10",  "lns_mono_time_limit":  10.0},
-    {"name": "mono_t20",  "lns_mono_time_limit":  20.0},
-    {"name": "mono_t40",  "lns_mono_time_limit":  40.0},
-    {"name": "mono_t60",  "lns_mono_time_limit":  60.0},
-    {"name": "mono_t150", "lns_mono_time_limit": 150.0},
+    # ── Groupe A : mono — temps par palette ─────────────────────────────────────
+    {"name": "mono_tp005", "lns_mono_time_per_pallet": 0.05},
+    {"name": "mono_tp010", "lns_mono_time_per_pallet": 0.10},
+    {"name": "mono_tp020", "lns_mono_time_per_pallet": 0.20},
+    {"name": "mono_tp050", "lns_mono_time_per_pallet": 0.50},
 
-    # ── Groupe B : multi LNS time budget ────────────────────────────────────────
-    {"name": "multi_t5",  "lns_multi_time_limit":  5.0},
-    {"name": "multi_t10", "lns_multi_time_limit": 10.0},
-    {"name": "multi_t20", "lns_multi_time_limit": 20.0},
-    {"name": "multi_t60", "lns_multi_time_limit": 60.0},
+    # ── Groupe A2 : mono — itérations par palette ────────────────────────────────
+    {"name": "mono_ip3",  "lns_mono_iter_per_pallet": 3},
+    {"name": "mono_ip5",  "lns_mono_iter_per_pallet": 5},
+    {"name": "mono_ip10", "lns_mono_iter_per_pallet": 10},
 
-    # ── Groupe C : post-processing budget ───────────────────────────────────────
-    {"name": "pp_t5",     "pp_time_limit":  5.0, "pp_max_iterations": 125},
-    {"name": "pp_t10",    "pp_time_limit": 10.0, "pp_max_iterations": 125},
-    {"name": "pp_t40",    "pp_time_limit": 40.0, "pp_max_iterations": 500},
+    # ── Groupe B : multi — temps par palette ─────────────────────────────────────
+    {"name": "multi_tp05", "lns_multi_time_per_pallet": 0.5},
+    {"name": "multi_tp10", "lns_multi_time_per_pallet": 1.0},
+    {"name": "multi_tp20", "lns_multi_time_per_pallet": 2.0},
 
-    # ── Groupe D : max_iterations (budget de convergence) ───────────────────────
-    {"name": "mono_i100", "lns_mono_max_iterations": 100},
-    {"name": "mono_i200", "lns_mono_max_iterations": 200},
-    {"name": "multi_i100","lns_multi_max_iterations": 100},
-    {"name": "multi_i150","lns_multi_max_iterations": 150},
+    # ── Groupe B2 : multi — itérations par palette ───────────────────────────────
+    {"name": "multi_ip5",  "lns_multi_iter_per_pallet":  5},
+    {"name": "multi_ip10", "lns_multi_iter_per_pallet": 10},
+    {"name": "multi_ip20", "lns_multi_iter_per_pallet": 20},
 
-    # ── Config « slim » — à renseigner après analyse des résultats ───────────────
+    # ── Groupe C : post-processing — temps par palette ───────────────────────────
+    {"name": "pp_tp1", "pp_time_per_pallet": 1.0, "pp_iter_per_pallet": 15},
+    {"name": "pp_tp2", "pp_time_per_pallet": 2.0, "pp_iter_per_pallet": 30},
+    {"name": "pp_tp4", "pp_time_per_pallet": 4.0, "pp_iter_per_pallet": 60},
+
+    # ── Config « slim » candidate — à ajuster après analyse ─────────────────────
     # {"name": "slim_candidate",
-    #  "lns_mono_time_limit": 40.0, "lns_mono_max_iterations": 200,
-    #  "lns_multi_time_limit": 20.0, "lns_multi_max_iterations": 150,
-    #  "pp_time_limit": 10.0, "pp_max_iterations": 125},
+    #  "lns_mono_time_per_pallet": 0.1, "lns_mono_iter_per_pallet": 5,
+    #  "lns_multi_time_per_pallet": 1.0, "lns_multi_iter_per_pallet": 10,
+    #  "pp_time_per_pallet": 2.0, "pp_iter_per_pallet": 30},
 ]
 
 
@@ -202,9 +204,9 @@ def _run_pipeline(params: OptimizationParameters) -> tuple[list, str]:
 
 _FIELDNAMES = [
     "config_name",
-    "lns_mono_time", "lns_mono_iters_max",
-    "lns_multi_time", "lns_multi_iters_max",
-    "pp_time", "pp_iters_max",
+    "lns_mono_time_per_pallet", "lns_mono_iter_per_pallet",
+    "lns_multi_time_per_pallet", "lns_multi_iter_per_pallet",
+    "pp_time_per_pallet", "pp_iter_per_pallet",
     "total_runtime_s", "final_pallets",
     "mono_iters", "mono_improvements", "mono_stagnation", "mono_stag_pct",
     "mono_elapsed_s", "mono_pal_delta",
@@ -329,13 +331,13 @@ if __name__ == "__main__":
                      if k not in ("config_name", "total_runtime_s")}
 
         row = {
-            "config_name":        name,
-            "lns_mono_time":      params.lns_mono_time_limit,
-            "lns_mono_iters_max": params.lns_mono_max_iterations,
-            "lns_multi_time":     params.lns_multi_time_limit,
-            "lns_multi_iters_max":params.lns_multi_max_iterations,
-            "pp_time":            params.pp_time_limit,
-            "pp_iters_max":       params.pp_max_iterations,
+            "config_name":              name,
+            "lns_mono_time_per_pallet": params.lns_mono_time_per_pallet,
+            "lns_mono_iter_per_pallet": params.lns_mono_iter_per_pallet,
+            "lns_multi_time_per_pallet":params.lns_multi_time_per_pallet,
+            "lns_multi_iter_per_pallet":params.lns_multi_iter_per_pallet,
+            "pp_time_per_pallet":       params.pp_time_per_pallet,
+            "pp_iter_per_pallet":       params.pp_iter_per_pallet,
             "total_runtime_s":    total_runtime,
             **stats,
         }

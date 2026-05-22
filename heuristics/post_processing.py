@@ -338,6 +338,8 @@ def _lns_group(
     params: OptimizationParameters,
     rng: random.Random,
     label: str,
+    time_budget: float = None,
+    iter_budget: int   = None,
 ) -> List[Pallet]:
     """
     Unified LNS for both mono-client and multi-client groups.
@@ -352,6 +354,11 @@ def _lns_group(
     """
     if not pallets:
         return pallets
+
+    if time_budget is None:
+        time_budget = max(1.0, len(pallets) * params.pp_time_per_pallet)
+    if iter_budget is None:
+        iter_budget = max(1, len(pallets) * params.pp_iter_per_pallet)
 
     N = len(pallets)
     original = copy.deepcopy(pallets)      # safety net — returned if nothing improves
@@ -384,14 +391,14 @@ def _lns_group(
 
     if delta > _FILL_EQUALIZATION_THRESHOLD:
         # Use half the iteration budget for fill equalization
-        fill_iters = params.pp_max_iterations // 2
+        fill_iters = iter_budget // 2
         fill_cost  = compute_pp_cost(best, params)   # cost without P2
 
         print(f"{label} fill delta {delta:.1%} > {_FILL_EQUALIZATION_THRESHOLD:.0%}"
               f" — running fill equalization ({fill_iters} iters max)")
 
         for iteration in range(1, fill_iters + 1):
-            if time.time() - start > params.pp_time_limit / 2:
+            if time.time() - start > time_budget / 2:
                 break
 
             current = copy.deepcopy(best)
@@ -473,8 +480,8 @@ def _lns_group(
     p2_iters_run              = 0
     p2_start                  = time.time()
 
-    for iteration in range(1, params.pp_max_iterations + 1):
-        if time.time() - p2_start > params.pp_time_limit:
+    for iteration in range(1, iter_budget + 1):
+        if time.time() - p2_start > time_budget:
             break
 
         trial = copy.deepcopy(p1_snapshot)
@@ -856,7 +863,7 @@ def postprocess(
     print(f"\n{'='*60}")
     print(f"  Post-processing  (LNS)")
     print(f"{'='*60}")
-    print(f"  Budget   : {params.pp_time_limit}s / {params.pp_max_iterations} iters  top-k={params.pp_top_k}")
+    print(f"  Budget   : {params.pp_time_per_pallet}s/palette × {params.pp_iter_per_pallet} iters/palette  top-k={params.pp_top_k}")
     print(f"  Weights  : contact={params.pp_w_contact}  fill={params.pp_w_fill}  "
           f"P2={params.pp_w_p2}  height={params.pp_w_height}  "
           f"stability={params.pp_w_stability}\n")
@@ -894,20 +901,28 @@ def postprocess(
         group = mono_groups[cid]
         print(f"\n[Post] ── Mono-client group: client {cid}  "
               f"({len(group)} pallet(s)) ──")
+        t_budget = max(1.0, len(group) * params.pp_time_per_pallet)
+        i_budget = max(1,   len(group) * params.pp_iter_per_pallet)
         improved = _lns_group(
             group, box_lookup, params,
             rng=random.Random(rng.randint(0, 2**31)),
             label=f"[LNS|cid={cid}]",
+            time_budget=t_budget,
+            iter_budget=i_budget,
         )
         result.extend(improved)
 
     # ── LNS for multi-client group (same unified strategy) ──────────────────
     if multi_group:
         print(f"\n[Post] ── Multi-client group  ({len(multi_group)} pallet(s)) ──")
+        t_budget = max(1.0, len(multi_group) * params.pp_time_per_pallet)
+        i_budget = max(1,   len(multi_group) * params.pp_iter_per_pallet)
         improved_multi = _lns_group(
             multi_group, box_lookup, params,
             rng=random.Random(rng.randint(0, 2**31)),
             label="[LNS|multi]",
+            time_budget=t_budget,
+            iter_budget=i_budget,
         )
         result.extend(improved_multi)
 

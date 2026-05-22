@@ -1,0 +1,6 @@
+id;priority;length;width;height;weight;allowed_orientations;client_id;stackable;designation;location
+428796009000101;2;82.3;43.2;6.1;4.0;all;428796;False;;
+442057009000401;1;87.1;62.3;62.2;28.8;HLW,LHW;442057;True;;
+442057009000201;1;122.3;87.1;62.2;67.7;HWL,WHL;442057;True;;
+442057009000501;1;92.3;87.1;67.2;54.0;HWL,WHL;442057;True;;
+442057009000101;1;92.3;87.1;62.2;41.8;HWL,WHL;442057;True;;

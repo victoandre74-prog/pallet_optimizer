@@ -1,0 +1,4 @@
+id;priority;length;width;height;weight;allowed_orientations;client_id;stackable;designation;location
+467247009000201;1;84.6;38.2;17.3;12.1;HWL,WHL,WLH,LWH;467247;True;;
+467247009000102;1;70.8;38.2;17.3;20.2;HWL,WHL,WLH,LWH;467247;True;;
+467247009000101;1;70.8;38.2;17.3;20.2;HWL,WHL,WLH,LWH;467247;True;;

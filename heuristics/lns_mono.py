@@ -377,10 +377,9 @@ def lns_mono_client(
         cid = next(iter(p.client_ids))
         groups.setdefault(cid, []).append(p)
 
-    total_pallets = len(mono)
     improved_all: List[Pallet] = []
 
-    print(f"[LNS-mono] {len(groups)} client group(s), {total_pallets} pallets total.")
+    print(f"[LNS-mono] {len(groups)} client group(s), {len(mono)} pallets total.")
 
     for cid, group in sorted(groups.items()):
         if len(group) <= 1:
@@ -388,9 +387,8 @@ def lns_mono_client(
             improved_all.extend(group)
             continue
 
-        weight      = len(group) / total_pallets
-        time_budget = max(1.0, params.lns_mono_time_limit * weight)
-        iter_budget = max(1,   int(params.lns_mono_max_iterations * weight))
+        time_budget = max(1.0, len(group) * params.lns_mono_time_per_pallet)
+        iter_budget = max(1,   len(group) * params.lns_mono_iter_per_pallet)
 
         seed = params.lns_mono_random_seed ^ cid
         rng  = random.Random(seed)
