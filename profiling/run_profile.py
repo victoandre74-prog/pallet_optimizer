@@ -12,6 +12,7 @@ Sorties :
 """
 
 import cProfile
+import glob
 import pstats
 import io
 import sys
@@ -29,7 +30,7 @@ from optimizer.pallet_optimizer import optimize_palletization
 from heuristics.post_processing import postprocess
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-INPUT_CSV   = os.path.join(_BASE, r"input\tournee_type2026\tournee_type2026.csv")
+INPUT_DIR   = os.path.join(_BASE, r"input\tournee_type2026\SL18in")
 OUTPUT_FAKE = os.path.join(_BASE, r"output\profile_run_results.csv")
 PROF_FILE   = os.path.join(_DIR, "profile_output.prof")
 TOP_N       = 20
@@ -39,16 +40,24 @@ params = OptimizationParameters()
 
 # ── Pipeline profilée ─────────────────────────────────────────────────────────
 def pipeline():
-    boxes   = read_boxes_from_csv(INPUT_CSV)
-    pallets = optimize_palletization(boxes, params, output_path=OUTPUT_FAKE)
-    if params.enable_post_processing:
-        pallets = postprocess(pallets, boxes, params)
-    return pallets
+    csv_files   = sorted(glob.glob(os.path.join(INPUT_DIR, "*.csv")))
+    all_pallets = []
+    for csv_file in csv_files:
+        fname   = os.path.basename(csv_file)
+        boxes   = read_boxes_from_csv(csv_file)
+        pallets = optimize_palletization(boxes, params, output_path=OUTPUT_FAKE)
+        if params.enable_post_processing:
+            pallets = postprocess(pallets, boxes, params)
+        print(f"  {fname}: {len(pallets)} palette(s), {sum(len(p.boxes) for p in pallets)} colis")
+        all_pallets.extend(pallets)
+    return all_pallets
 
 
 # ── Lancement ────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    print(f"[Profile] Fichier d'entrée : {INPUT_CSV}")
+    _csv_files = sorted(glob.glob(os.path.join(INPUT_DIR, "*.csv")))
+    print(f"[Profile] Dossier d'entrée : {INPUT_DIR}")
+    print(f"[Profile] Fichiers CSV     : {len(_csv_files)}")
     print(f"[Profile] Post-processing  : {params.enable_post_processing}")
     print("[Profile] Démarrage du profiler...\n")
 
@@ -57,8 +66,10 @@ if __name__ == "__main__":
     result = pipeline()
     profiler.disable()
 
-    print(f"\n[Profile] Pipeline terminé — {sum(len(p.boxes) for p in result)} colis placés "
-          f"sur {len(result)} palette(s).\n")
+    total_colis    = sum(len(p.boxes) for p in result)
+    total_palettes = len(result)
+    print(f"\n[Profile] Pipeline terminé — {total_colis} colis placés "
+          f"sur {total_palettes} palette(s) sur {len(_csv_files)} fichier(s).\n")
 
     # ── Rapport console ───────────────────────────────────────────────────────
     stream = io.StringIO()

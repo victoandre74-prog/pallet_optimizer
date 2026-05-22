@@ -14,6 +14,7 @@ Output:
 """
 
 import copy
+import glob
 import io
 import os
 import sys
@@ -39,7 +40,7 @@ from optimizer.pallet_optimizer import optimize_palletization
 from heuristics.post_processing import postprocess
 
 # ── Input ─────────────────────────────────────────────────────────────────────
-INPUT_CSV    = os.path.join(_BASE, r"input\tournee_type2026\tournee_type2026.csv")
+INPUT_DIR    = os.path.join(_BASE, r"input\tournee_type2026\SL18in")
 OUTPUT_FAKE  = os.path.join(_BASE, r"output\sweep_run_results.csv")
 CSV_OUT      = os.path.join(_DIR, "sweep_results.csv")
 XLSX_OUT     = os.path.join(_DIR, "sweep_results.xlsx")
@@ -186,18 +187,26 @@ def _parse_log(log: str) -> dict:
 # ── Pipeline ──────────────────────────────────────────────────────────────────
 
 def _run_pipeline(params: OptimizationParameters) -> tuple[list, str]:
-    """Runs the pipeline and returns (pallets, captured_stdout)."""
-    buf = io.StringIO()
-    old_stdout = sys.stdout
-    sys.stdout = buf
-    try:
-        boxes   = read_boxes_from_csv(INPUT_CSV)
-        pallets = optimize_palletization(boxes, params, output_path=OUTPUT_FAKE)
-        if params.enable_post_processing:
-            pallets = postprocess(pallets, boxes, params)
-    finally:
-        sys.stdout = old_stdout
-    return pallets, buf.getvalue()
+    """Runs the pipeline on every CSV in INPUT_DIR; returns (all_pallets, combined_stdout)."""
+    csv_files   = sorted(glob.glob(os.path.join(INPUT_DIR, "*.csv")))
+    all_pallets = []
+    combined    = []
+
+    for csv_file in csv_files:
+        buf = io.StringIO()
+        old_stdout = sys.stdout
+        sys.stdout = buf
+        try:
+            boxes   = read_boxes_from_csv(csv_file)
+            pallets = optimize_palletization(boxes, params, output_path=OUTPUT_FAKE)
+            if params.enable_post_processing:
+                pallets = postprocess(pallets, boxes, params)
+            all_pallets.extend(pallets)
+        finally:
+            sys.stdout = old_stdout
+        combined.append(buf.getvalue())
+
+    return all_pallets, "".join(combined)
 
 
 # ── Report writers ─────────────────────────────────────────────────────────────
@@ -295,8 +304,10 @@ def _write_xlsx(rows: list[dict]) -> None:
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    print(f"[Sweep] Input : {INPUT_CSV}")
-    print(f"[Sweep] Configs: {len(SWEEP_GRID)}\n")
+    _csv_files = sorted(glob.glob(os.path.join(INPUT_DIR, "*.csv")))
+    print(f"[Sweep] Input dir : {INPUT_DIR}")
+    print(f"[Sweep] CSV files : {len(_csv_files)}")
+    print(f"[Sweep] Configs   : {len(SWEEP_GRID)}\n")
 
     baseline_params = OptimizationParameters()
     rows = []
