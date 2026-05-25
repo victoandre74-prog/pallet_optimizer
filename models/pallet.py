@@ -6,6 +6,7 @@ boxes that have been packed onto it.  It exposes helpers for common
 statistics used by both the optimizer and the visualizer.
 """
 
+import copy
 from dataclasses import dataclass, field
 from typing import List, Set
 
@@ -118,6 +119,28 @@ class Pallet:
 
     def is_empty(self) -> bool:
         return len(self.boxes) == 0
+
+    # ── Copie rapide ────────────────────────────────────────────────────────────
+
+    def __deepcopy__(self, memo):
+        """
+        Copie profonde optimisée pour le LNS.
+
+        Les champs scalaires (id, dimensions) sont immuables en Python — ils sont
+        partagés par référence sans risque.  Seule la liste `boxes` est dupliquée,
+        avec copy.copy() sur chaque PlacedBox (utilise PlacedBox.__copy__,
+        ~100x plus rapide que le deepcopy générique qui traverse récursivement
+        tout le graphe d'objets).
+        """
+        new = object.__new__(Pallet)
+        memo[id(self)] = new
+        new.id         = self.id
+        new.length     = self.length
+        new.width      = self.width
+        new.max_height = self.max_height
+        new.max_weight = self.max_weight
+        new.boxes      = [copy.copy(pb) for pb in self.boxes]
+        return new
 
     def __repr__(self) -> str:
         return (

@@ -92,6 +92,28 @@ class PlacedBox:
             self.z, self.z_max,
         )
 
+    # ── Copie rapide ────────────────────────────────────────────────────────────
+
+    def __copy__(self):
+        """
+        Copie superficielle = copie complète : tous les champs sont des primitives
+        (float, int, str, bool) ou des singletons immuables (Orientation enum).
+        x_max / y_max / z_max sont déjà calculés dans __dict__ et copiés tels quels,
+        sans repasser par __post_init__.
+        """
+        new = object.__new__(PlacedBox)
+        new.__dict__.update(self.__dict__)
+        return new
+
+    def __deepcopy__(self, memo):
+        """
+        Identique à __copy__ : aucun champ n'est un conteneur mutable, donc
+        la copie superficielle est sémantiquement équivalente à une copie profonde.
+        """
+        new = self.__copy__()
+        memo[id(self)] = new
+        return new
+
     def __repr__(self) -> str:
         return (
             f"PlacedBox(id={self.box_id!r}, "
