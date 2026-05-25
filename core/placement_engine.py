@@ -28,7 +28,7 @@ from config.parameters import OptimizationParameters
 from core.collision_detection import is_placement_geometrically_valid
 from core.stacking_rules import check_stacking_rules
 from core.stability_check import check_support_ratio, check_stack_stability
-from utils.geometry import xy_overlap, boxes_intersect_3d
+from utils.geometry import xy_overlap, boxes_intersect_3d  # conservés pour les appelants externes
 
 # Floating-point tolerance
 FLOAT_TOL = 1e-6
@@ -100,28 +100,35 @@ def find_support_z(
     candidate may rest on the floor even if a higher placed box partially
     overhangs the same XY area, as long as the candidate height does not
     reach that overhanging box.
+
+    Performance note: les appels à xy_overlap() et boxes_intersect_3d()
+    sont inlinés ici pour éliminer l'overhead des appels de fonctions Python
+    (7 appels × 869 M itérations = ~900 s d'overhead pur).
+    pb.x_max / pb.y_max / pb.z_max sont des attributs précalculés sur PlacedBox.
     """
     cx_max = cx + length
     cy_max = cy + width
 
-    # Collect candidate resting z values from XY-overlapping boxes + floor
+    # ── Passe 1 : collecter les z candidats depuis les boîtes XY-chevauchantes ──
+    # xy_overlap inliné : utilise pb.x_max / pb.y_max déjà calculés (pas d'addition)
     candidate_zs = {0.0}
     for pb in placed_boxes:
-        if xy_overlap(cx, cy, cx_max, cy_max, pb.x, pb.y, pb.x_max, pb.y_max):
+        if cx < pb.x_max and pb.x < cx_max and cy < pb.y_max and pb.y < cy_max:
             candidate_zs.add(pb.z_max)
 
-    # Test surfaces lowest-first; return the first (lowest) without collision
+    # ── Passe 2 : tester chaque z candidat (du plus bas au plus haut) ───────────
+    # boxes_intersect_3d inliné : cx_max/cy_max calculés une fois, z_max une fois par z
     for z in sorted(candidate_zs):
+        z_max_new = z + height
         for pb in placed_boxes:
-            if boxes_intersect_3d(
-                cx, cy, z, length, width, height,
-                pb.x, pb.y, pb.z, pb.length, pb.width, pb.height
-            ):
+            if (cx < pb.x_max and pb.x < cx_max and
+                    cy < pb.y_max and pb.y < cy_max and
+                    z  < pb.z_max and pb.z < z_max_new):
                 break
         else:
-            return z  # no collision at this level
+            return z  # aucune collision à ce niveau
 
-    return 0.0  # fallback (should not be reached for valid inputs)
+    return 0.0  # fallback (ne doit pas être atteint pour des entrées valides)
 
 
 # ── Constraint validation ──────────────────────────────────────────────────────

@@ -9,9 +9,6 @@ from typing import List
 
 from models.placed_box import PlacedBox
 from models.pallet import Pallet
-from utils.geometry import boxes_intersect_3d
-
-
 def is_within_pallet(
     x: float, y: float, z: float,
     length: float, width: float, height: float,
@@ -41,12 +38,18 @@ def collides_with_any(
     Returns True when the candidate box overlaps with ANY already-placed box.
 
     Uses strict 3-D AABB intersection (touching faces are NOT considered colliding).
+
+    Performance note: boxes_intersect_3d() est inliné ici pour éliminer
+    l'overhead de 4 appels Python par boîte (boxes_intersect_3d + 3× intervals_overlap).
+    pb.x_max / pb.y_max / pb.z_max sont des attributs précalculés sur PlacedBox.
     """
+    x_max = x + length
+    y_max = y + width
+    z_max = z + height
     for pb in placed_boxes:
-        if boxes_intersect_3d(
-            x, y, z, length, width, height,
-            pb.x, pb.y, pb.z, pb.length, pb.width, pb.height
-        ):
+        if (x  < pb.x_max and pb.x < x_max and
+                y  < pb.y_max and pb.y < y_max and
+                z  < pb.z_max and pb.z < z_max):
             return True
     return False
 
