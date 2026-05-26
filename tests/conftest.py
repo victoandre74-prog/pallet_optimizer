@@ -5,7 +5,7 @@ Test data is derived from real-world delivery routes
 (input/tournee_type2026/tournee_type2026.csv) combined with minimal
 synthetic cases designed to exercise specific constraints.
 
-Pallet reference: 130 × 80 × 226 cm, 600 kg  (default OptimizationParameters)
+Pallet reference: 130 × 80 × 227 cm, 600 kg  (default OptimizationParameters)
 """
 
 import sys

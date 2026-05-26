@@ -68,8 +68,8 @@ class TestEmptyPallet:
 
 class TestPalletVolume:
     def test_default_dimensions(self, empty_pallet):
-        # 130 × 80 × 226 cm
-        expected = 130.0 * 80.0 * 226.0
+        # 130 × 80 × 227 cm  (pallet_max_height = 227.0 dans OptimizationParameters)
+        expected = 130.0 * 80.0 * 227.0
         assert empty_pallet.pallet_volume == pytest.approx(expected)
 
     def test_custom_dimensions(self):
@@ -117,11 +117,11 @@ class TestWeightMultipleBoxes:
 class TestFillRatio:
     def test_single_box_fill_ratio(self, empty_pallet):
         # Box: 70.8×62.3×6.0 = 26,481.84 cm³
-        # Pallet: 130×80×226 = 2,350,400 cm³
+        # Pallet: 130×80×227 = 2,360,800 cm³  (pallet_max_height = 227.0)
         pb = make_placed_box(length=70.8, width=62.3, height=6.0, weight=3.7)
         empty_pallet.boxes.append(pb)
         box_vol = 70.8 * 62.3 * 6.0
-        pallet_vol = 130.0 * 80.0 * 226.0
+        pallet_vol = 130.0 * 80.0 * 227.0
         expected = box_vol / pallet_vol
         assert empty_pallet.volumetric_fill_ratio == pytest.approx(expected)
 
