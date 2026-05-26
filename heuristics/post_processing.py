@@ -689,6 +689,44 @@ def _gap_direction(pallet: Pallet, scale: float = 1.0) -> str:
     return 'right' if right_sum >= left_sum else 'left'
 
 
+def _xz_gap_with_box(
+    placed_p1_xzlh: List[Tuple[float, float, float, float]],
+    ax: float, z: float, bL: float, bH: float,
+    scale: float = 1.0,
+) -> float:
+    """
+    Compute the XZ water-fill gap of a P1 height profile that includes a
+    candidate box at (ax, z, bL, bH) on top of the already-placed P1 boxes
+    described by (x, z, length, height) tuples.
+
+    Lightweight helper — avoids creating a Pallet object per candidate.
+    """
+    items = placed_p1_xzlh + [(ax, z, bL, bH)]
+    a_max = max(x + l for x, _, l, _ in items)
+    n = int(a_max / scale) + 2
+    H_arr = [0.0] * n
+    for x, bz, l, h in items:
+        b1 = bz + h
+        for ga in range(int(x / scale), min(int((x + l) / scale) + 1, n)):
+            if H_arr[ga] < b1:
+                H_arr[ga] = b1
+    occupied = [gx for gx in range(n) if H_arr[gx] > 0]
+    if not occupied:
+        return 0.0
+    x0, x1 = min(occupied), max(occupied) + 1
+    ml = mr = 0.0
+    max_left  = [0.0] * n
+    max_right = [0.0] * n
+    for gx in range(x0, x1):
+        ml = max(ml, H_arr[gx]); max_left[gx] = ml
+    for gx in range(x1 - 1, x0 - 1, -1):
+        mr = max(mr, H_arr[gx]); max_right[gx] = mr
+    return sum(
+        max(0.0, min(max_left[gx], max_right[gx]) - H_arr[gx]) * scale
+        for gx in range(x0, x1)
+    )
+
+
 def _find_best_placement_signed(
     box: Box,
     pallet: Pallet,
@@ -699,34 +737,47 @@ def _find_best_placement_signed(
     Tests all 4 signed placements at each EP and uses *x_gravity* to
     bias horizontal preference.
 
-        x_gravity = -1  →  prefer high x  (move right toward tall column)
-        x_gravity = +1  →  prefer low  x  (move left toward tall column)
+        x_gravity = -1  =>  prefer high x  (move right toward tall column)
+        x_gravity = +1  =>  prefer low  x  (move left toward tall column)
+
+    Score: (z, xz_gap_after_placement, x_gravity * ax, ay)
+
+    The XZ gap after placement is used as the primary secondary criterion so
+    that placements which close the water-fill gap always win over those that
+    merely satisfy the x_gravity direction but leave a residual void.
+    Example: placing a box at x=87.1 (gap=0) beats x=91.2 (gap=173 cm2)
+    even though 91.2 > 87.1 satisfies x_gravity=-1 better.
     """
     best       = None
     best_score = None
 
+    # Snapshot of already-placed P1 boxes for the gap computation below.
+    placed_p1 = [(pb.x, pb.z, pb.length, pb.height)
+                 for pb in pallet.boxes if pb.priority == 1]
+
     for orientation in box.allowed_orientations:
-        L, W, H = get_oriented_dimensions(box.length, box.width, box.height, orientation)
+        bL, bW, bH = get_oriented_dimensions(box.length, box.width, box.height, orientation)
 
         for cx, cy in generate_extreme_points(pallet):
             for sx, sy in _SIGNS:
-                ax = cx if sx > 0 else cx - L
-                ay = cy if sy > 0 else cy - W
+                ax = cx if sx > 0 else cx - bL
+                ay = cy if sy > 0 else cy - bW
 
                 if ax < -FLOAT_TOL or ay < -FLOAT_TOL:
                     continue
-                if ax + L > pallet.length + FLOAT_TOL or ay + W > pallet.width + FLOAT_TOL:
+                if ax + bL > pallet.length + FLOAT_TOL or ay + bW > pallet.width + FLOAT_TOL:
                     continue
 
                 ax = max(0.0, ax)
                 ay = max(0.0, ay)
 
-                z = find_support_z(ax, ay, L, W, H, pallet.boxes)
+                z = find_support_z(ax, ay, bL, bW, bH, pallet.boxes)
 
-                if not is_valid_placement(box, ax, ay, z, orientation, L, W, H, pallet, params):
+                if not is_valid_placement(box, ax, ay, z, orientation, bL, bW, bH, pallet, params):
                     continue
 
-                score = (z, x_gravity * ax, ay)
+                gap = _xz_gap_with_box(placed_p1, ax, z, bL, bH)
+                score = (z, gap, x_gravity * ax, ay)
                 if best_score is None or score < best_score:
                     best_score = score
                     best = (ax, ay, z, orientation)
@@ -773,6 +824,96 @@ def _try_repack_signed(
     return new_pallet
 
 
+def _leaf_p1_boxes(pallet: Pallet) -> List[PlacedBox]:
+    """
+    Returns P1 boxes that have no other box (P1 or P2) resting directly on top.
+
+    A box B "rests on" box A when B.z ≈ A.z + A.height and their XY footprints
+    overlap.  Leaf boxes are safe to remove without leaving any remaining box
+    unsupported.
+    """
+    p1_boxes = [pb for pb in pallet.boxes if pb.priority == 1]
+    supported_ids: set = set()
+    for a in p1_boxes:
+        a_top = a.z + a.height
+        for b in pallet.boxes:
+            if b.box_id == a.box_id:
+                continue
+            if abs(b.z - a_top) > FLOAT_TOL:
+                continue
+            ov_x = max(0.0, min(b.x + b.length, a.x + a.length) - max(b.x, a.x))
+            ov_y = max(0.0, min(b.y + b.width,  a.y + a.width)  - max(b.y, a.y))
+            if ov_x > FLOAT_TOL and ov_y > FLOAT_TOL:
+                supported_ids.add(a.box_id)
+                break
+    return [pb for pb in p1_boxes if pb.box_id not in supported_ids]
+
+
+def _targeted_gap_repair_1box(
+    pallet: Pallet,
+    box_lookup: Dict[str, Box],
+    params: OptimizationParameters,
+) -> Pallet:
+    """
+    Targeted 1-box local search for gap repair.
+
+    For each leaf P1 box (nothing rests on it — safe to remove):
+        1. Remove it from the pallet, leaving every other box in place.
+        2. Find its gap-minimising reinsertion position using score
+           (z, xz_gap, ay) — no x_gravity directional bias.
+        3. Accept the move if the XZ water-fill gap strictly decreases.
+
+    Moves are applied greedily: each accepted move updates the working pallet
+    so subsequent leaf trials operate on the already-improved layout.
+
+    Returns the improved pallet, or the original if no improvement was found.
+    """
+    current_gap = _water_fill_gap(pallet, 'x', 'length', 'z', 'height')
+    best_pallet = pallet
+    best_gap    = current_gap
+
+    for leaf_pb in _leaf_p1_boxes(pallet):
+        box = box_lookup.get(leaf_pb.box_id)
+        if box is None:
+            continue
+
+        # Reduced pallet: current best layout minus this leaf box
+        reduced = Pallet(
+            id=best_pallet.id, length=best_pallet.length,
+            width=best_pallet.width, max_height=best_pallet.max_height,
+            max_weight=best_pallet.max_weight,
+        )
+        reduced.boxes = [pb for pb in best_pallet.boxes
+                         if pb.box_id != leaf_pb.box_id]
+
+        # Find gap-minimising position; x_gravity=0 means no directional bias
+        # → score = (z, xz_gap, 0, ay)
+        result = _find_best_placement_signed(box, reduced, params, x_gravity=0)
+        if result is None:
+            continue
+
+        ax, ay, z, orientation = result
+        new_pb          = make_placed_box(box, ax, ay, z, orientation)
+        new_pb.sequence = leaf_pb.sequence   # preserve original sequence slot
+
+        # Candidate: remaining boxes + reinserted leaf at new position
+        candidate       = Pallet(
+            id=best_pallet.id, length=best_pallet.length,
+            width=best_pallet.width, max_height=best_pallet.max_height,
+            max_weight=best_pallet.max_weight,
+        )
+        candidate.boxes = reduced.boxes + [new_pb]
+
+        new_gap = _water_fill_gap(candidate, 'x', 'length', 'z', 'height')
+        if new_gap < best_gap - FLOAT_TOL:
+            best_gap    = new_gap
+            best_pallet = candidate
+            if new_gap < FLOAT_TOL:
+                break   # gap fully closed — no need to try more leaves
+
+    return best_pallet
+
+
 def _repack_gap_pallet(
     pallet: Pallet,
     box_lookup: Dict[str, Box],
@@ -781,16 +922,21 @@ def _repack_gap_pallet(
     """
     Attempts a gap-repair repack on *pallet*.
 
-    1. Detect gap direction (which side has the taller P1 column).
-    2. Try BOTH x_gravity values (push left AND push right), keep the best.
-       Rationale: the water-fill heuristic can mis-detect the direction when
-       both sides of the gap are tall (the global max_left accumulator is then
-       contaminated by a far-left tall column that is unrelated to the local
-       gap boundary).  Trying both costs one extra repack per flagged pallet —
-       negligible since gap repair is a one-shot pass.
-    3. Accept only if every box was placed AND XZ gap decreased.
+    Strategy A — full repack (both directions):
+        1. Detect gap direction (which side has the taller P1 column).
+        2. Try BOTH x_gravity values (push left AND push right), keep the best.
+           Rationale: the water-fill heuristic can mis-detect the direction when
+           both sides of the gap are tall (the global max_left accumulator is
+           then contaminated by a far-left tall column unrelated to the local
+           gap boundary).  Trying both costs one extra repack — negligible.
+        3. Accept only if every box was placed AND XZ gap decreased.
+
+    Strategy B — targeted 1-box local search (fallback):
+        If Strategy A found no improvement, try removing each leaf P1 box
+        one at a time and reinserting it at the gap-minimising position.
+        Accepts any move that strictly reduces the XZ water-fill gap.
     """
-    old_gap = _water_fill_gap(pallet, 'x', 'length', 'z', 'height')
+    old_gap   = _water_fill_gap(pallet, 'x', 'length', 'z', 'height')
     direction = _gap_direction(pallet)
     x_gravity_hint = -1 if direction == 'right' else 1
 
@@ -804,8 +950,7 @@ def _repack_gap_pallet(
     best_pallet = pallet
     best_gap    = old_gap
 
-    # Try inferred direction first, then opposite — keep whichever gives the
-    # largest XZ gap reduction.
+    # ── Strategy A: full repack in both x_gravity directions ─────────────────
     for x_grav in (x_gravity_hint, -x_gravity_hint):
         candidate = _try_repack_signed(pallet, p1_boxes, p2_boxes, x_grav, params)
         if candidate is None:
@@ -817,12 +962,20 @@ def _repack_gap_pallet(
 
     if best_pallet is not pallet:
         print(f"    Pallet {pallet.id:3d}: gap {old_gap:.0f} -> {best_gap:.0f} cm2  "
-              f"[hint: {direction}]  OK accepted")
-    else:
-        print(f"    Pallet {pallet.id:3d}: gap {old_gap:.0f} -- no improvement from either direction  "
-              f"[hint: {direction}]  SKIP")
+              f"[hint: {direction}]  OK accepted (full repack)")
+        return best_pallet
 
-    return best_pallet
+    # ── Strategy B: targeted 1-box local search ───────────────────────────────
+    targeted = _targeted_gap_repair_1box(pallet, box_lookup, params)
+    if targeted is not pallet:
+        new_gap = _water_fill_gap(targeted, 'x', 'length', 'z', 'height')
+        print(f"    Pallet {pallet.id:3d}: gap {old_gap:.0f} -> {new_gap:.0f} cm2  "
+              f"[hint: {direction}]  OK accepted (1-box repair)")
+        return targeted
+
+    print(f"    Pallet {pallet.id:3d}: gap {old_gap:.0f} -- no improvement found  "
+          f"[hint: {direction}]  SKIP")
+    return pallet
 
 
 # ══════════════════════════════════════════════════════════════════════════════
