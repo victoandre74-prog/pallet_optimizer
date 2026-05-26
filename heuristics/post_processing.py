@@ -734,6 +734,45 @@ def _find_best_placement_signed(
     return best
 
 
+def _try_repack_signed(
+    pallet: Pallet,
+    p1_boxes: List[Box],
+    p2_boxes: List[Box],
+    x_gravity: int,
+    params: OptimizationParameters,
+) -> Optional[Pallet]:
+    """
+    Attempts a full P1+P2 repack of *pallet* using *x_gravity* to bias
+    horizontal placement.  Returns the new Pallet if every box was placed,
+    or None if any placement failed.
+    """
+    new_pallet = Pallet(id=pallet.id, length=pallet.length,
+                        width=pallet.width, max_height=pallet.max_height,
+                        max_weight=pallet.max_weight)
+
+    ordered_p1 = sorted(p1_boxes, key=lambda b: (-b.volume, -b.weight))
+    for box in ordered_p1:
+        result = _find_best_placement_signed(box, new_pallet, params, x_gravity)
+        if result is None:
+            return None
+        x, y, z, orientation = result
+        pb = make_placed_box(box, x, y, z, orientation)
+        pb.sequence = len(new_pallet.boxes) + 1
+        new_pallet.boxes.append(pb)
+
+    ordered_p2 = sorted(p2_boxes, key=lambda b: (-b.volume, -b.weight))
+    for box in ordered_p2:
+        result = _find_best_p2_placement(box, new_pallet, params)
+        if result is None:
+            return None
+        x, y, z, orientation = result
+        pb = make_placed_box(box, x, y, z, orientation)
+        pb.sequence = len(new_pallet.boxes) + 1
+        new_pallet.boxes.append(pb)
+
+    return new_pallet
+
+
 def _repack_gap_pallet(
     pallet: Pallet,
     box_lookup: Dict[str, Box],
@@ -743,13 +782,17 @@ def _repack_gap_pallet(
     Attempts a gap-repair repack on *pallet*.
 
     1. Detect gap direction (which side has the taller P1 column).
-    2. Repack P1 with signed placement (negative EP orientations).
-    3. Repack P2 with contact-aware placement.
-    4. Accept only if every box was placed AND XZ gap decreased.
+    2. Try BOTH x_gravity values (push left AND push right), keep the best.
+       Rationale: the water-fill heuristic can mis-detect the direction when
+       both sides of the gap are tall (the global max_left accumulator is then
+       contaminated by a far-left tall column that is unrelated to the local
+       gap boundary).  Trying both costs one extra repack per flagged pallet —
+       negligible since gap repair is a one-shot pass.
+    3. Accept only if every box was placed AND XZ gap decreased.
     """
     old_gap = _water_fill_gap(pallet, 'x', 'length', 'z', 'height')
     direction = _gap_direction(pallet)
-    x_gravity = -1 if direction == 'right' else 1
+    x_gravity_hint = -1 if direction == 'right' else 1
 
     all_boxes = [(pb, box_lookup.get(pb.box_id)) for pb in pallet.boxes]
     if any(b is None for _, b in all_boxes):
@@ -758,43 +801,28 @@ def _repack_gap_pallet(
     p1_boxes = [b for pb, b in all_boxes if pb.priority == 1]
     p2_boxes = [b for pb, b in all_boxes if pb.priority == 2]
 
-    # Repack P1 with signed placement
-    new_pallet = Pallet(id=pallet.id, length=pallet.length,
-                        width=pallet.width, max_height=pallet.max_height,
-                        max_weight=pallet.max_weight)
+    best_pallet = pallet
+    best_gap    = old_gap
 
-    ordered_p1 = sorted(p1_boxes, key=lambda b: (-b.volume, -b.weight))
-    for box in ordered_p1:
-        result = _find_best_placement_signed(box, new_pallet, params, x_gravity)
-        if result is None:
-            print(f"    Pallet {pallet.id:3d}: could not place P1  ✗ skipped")
-            return pallet
-        x, y, z, orientation = result
-        pb = make_placed_box(box, x, y, z, orientation)
-        pb.sequence = len(new_pallet.boxes) + 1
-        new_pallet.boxes.append(pb)
+    # Try inferred direction first, then opposite — keep whichever gives the
+    # largest XZ gap reduction.
+    for x_grav in (x_gravity_hint, -x_gravity_hint):
+        candidate = _try_repack_signed(pallet, p1_boxes, p2_boxes, x_grav, params)
+        if candidate is None:
+            continue
+        new_gap = _water_fill_gap(candidate, 'x', 'length', 'z', 'height')
+        if new_gap < best_gap - FLOAT_TOL:
+            best_gap    = new_gap
+            best_pallet = candidate
 
-    # Repack P2 with contact placement
-    ordered_p2 = sorted(p2_boxes, key=lambda b: (-b.volume, -b.weight))
-    for box in ordered_p2:
-        result = _find_best_p2_placement(box, new_pallet, params)
-        if result is None:
-            print(f"    Pallet {pallet.id:3d}: could not place P2  ✗ skipped")
-            return pallet
-        x, y, z, orientation = result
-        pb = make_placed_box(box, x, y, z, orientation)
-        pb.sequence = len(new_pallet.boxes) + 1
-        new_pallet.boxes.append(pb)
-
-    new_gap = _water_fill_gap(new_pallet, 'x', 'length', 'z', 'height')
-    if new_gap < old_gap - FLOAT_TOL:
-        print(f"    Pallet {pallet.id:3d}: gap {old_gap:.0f} → {new_gap:.0f} cm²  "
-              f"[direction: {direction}]  ✓ accepted")
-        return new_pallet
+    if best_pallet is not pallet:
+        print(f"    Pallet {pallet.id:3d}: gap {old_gap:.0f} -> {best_gap:.0f} cm2  "
+              f"[hint: {direction}]  OK accepted")
     else:
-        print(f"    Pallet {pallet.id:3d}: gap {old_gap:.0f} → {new_gap:.0f} cm²  "
-              f"[direction: {direction}]  ✗ no improvement")
-        return pallet
+        print(f"    Pallet {pallet.id:3d}: gap {old_gap:.0f} -- no improvement from either direction  "
+              f"[hint: {direction}]  SKIP")
+
+    return best_pallet
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -305,6 +305,7 @@ def _process_one(
         input_set  = set(input_ids)
         output_ids = [pb.box_id for p in pallets for pb in p.boxes]
         output_set = set(output_ids)
+        input_map: dict[str, object] = {b.id: b for b in boxes}
 
         check_ok        = True
         security_reason = ""
@@ -351,9 +352,67 @@ def _process_one(
             if not security_reason:
                 security_reason = f"sequence duplicates in {len(seq_errors)} pallet(s)"
 
+        # ── Field-level immutability check ────────────────────────────────────
+        # For each placed box whose box_id exists in input, verify that the
+        # fields copied from Box to PlacedBox have not been mutated:
+        #   client_id, priority, weight, orientation (must be in allowed list),
+        #   placed dimensions (must match get_oriented_dims(L,W,H,orientation)).
+        field_errors: list[str] = []
+        for p in pallets:
+            for pb in p.boxes:
+                orig = input_map.get(pb.box_id)
+                if orig is None:
+                    continue  # unknown box_id already caught by the extra-boxes check
+                violations: list[str] = []
+
+                if pb.client_id != orig.client_id:
+                    violations.append(
+                        f"client_id: input={orig.client_id} → output={pb.client_id}"
+                    )
+                if pb.priority != orig.priority:
+                    violations.append(
+                        f"priority: input={orig.priority} → output={pb.priority}"
+                    )
+                if pb.weight != orig.weight:
+                    violations.append(
+                        f"weight: input={orig.weight} → output={pb.weight}"
+                    )
+                if pb.orientation not in orig.allowed_orientations:
+                    allowed_str = ", ".join(o.value for o in orig.allowed_orientations)
+                    violations.append(
+                        f"orientation: placed={pb.orientation.value!r} not in"
+                        f" allowed=[{allowed_str}]"
+                    )
+                # Dimension coherence: placed dims must equal
+                # orig.get_oriented_dims(placed_orientation)
+                exp_l, exp_w, exp_h = orig.get_oriented_dims(pb.orientation)
+                if pb.length != exp_l or pb.width != exp_w or pb.height != exp_h:
+                    violations.append(
+                        f"dims: placed=({pb.length}×{pb.width}×{pb.height})"
+                        f" ≠ expected=({exp_l}×{exp_w}×{exp_h})"
+                        f" for orientation={pb.orientation.value}"
+                    )
+
+                if violations:
+                    field_errors.append(
+                        f"box_id={pb.box_id!r} pallet={p.id}: "
+                        + " | ".join(violations)
+                    )
+
+        if field_errors:
+            print(f"  [FAIL] Box field mutations detected ({len(field_errors)} box(es) affected):")
+            for msg in field_errors[:10]:
+                print(f"         - {msg}")
+            if len(field_errors) > 10:
+                print(f"         ... and {len(field_errors) - 10} more.")
+            check_ok = False
+            if not security_reason:
+                security_reason = f"{len(field_errors)} box(es) with mutated fields"
+
         if check_ok:
             print(f"  [OK] All {len(input_ids)} box(es) accounted for — input matches output.")
             print(f"  [OK] Sequence numbers are unique within each pallet.")
+            print(f"  [OK] Box field integrity verified (client, priority, weight, dims, orientation).")
         _phase_footer(6)
 
         # ── Write results — only on a clean integrity check ───────────────────
