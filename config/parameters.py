@@ -49,8 +49,6 @@ class OptimizationParameters:
                                     underfilled.
 
         --- Large Neighbourhood Search (mono-client pass) ---
-        lns_mono_time_per_pallet:   Wall-clock budget per pallet in the group (seconds).
-                                    Total budget = group_size × this value.
         lns_mono_small_box_volume:  Boxes below this volume (cm³) are also extracted
                                     from surviving pallets each iteration (alongside the
                                     destroyed pallets), giving the repair step more room.
@@ -61,8 +59,6 @@ class OptimizationParameters:
         lns_mono_random_seed:       Seed for reproducible mono-client runs.
 
         --- Large Neighbourhood Search (multi-client pass) ---
-        lns_multi_time_per_pallet:   Wall-clock budget per pallet in the pool (seconds).
-                                     Total budget = pool_size × this value.
         lns_multi_iter_per_pallet:   LNS iterations allocated per pallet in the pool.
                                      Total cap = pool_size × this value.
         lns_multi_random_seed:       Seed for reproducible multi-client runs
@@ -72,8 +68,6 @@ class OptimizationParameters:
                                      (EP × orientation) during repair
 
         --- Post-processing LNS (pp_*) ---
-        pp_time_per_pallet:   Wall-clock budget per pallet in the group (seconds).
-                              Total budget = group_size × this value.
         pp_iter_per_pallet:   LNS iterations allocated per pallet in the group.
                               Total cap = group_size × this value.
         pp_top_k:            Random-draw pool size for assignment (Least-Loaded-First
@@ -139,21 +133,18 @@ class OptimizationParameters:
     cost_multi_pallet_count: float = 10.0
 
     # ── Large Neighbourhood Search — mono-client pass ─────────────────────────
-    lns_mono_time_per_pallet: float = 0.7 # seconds per pallet — total = group_size × value
     lns_mono_small_box_volume: float = 590000.0  # cm³ — boxes below this volume are extracted from surviving pallets each iteration
     lns_mono_repair_top_k: int = 3              # pick randomly from top-k valid positions (EP × orientation) during repair
     lns_mono_iter_per_pallet: int = 30          # iterations per pallet — total cap = group_size × value
     lns_mono_random_seed: int = 42
 
     # ── Large Neighbourhood Search — multi-client pass ─────────────────────────
-    lns_multi_time_per_pallet: float = 0.5  # seconds per pallet — total = pool_size × value
     lns_multi_iter_per_pallet: int = 20     # iterations per pallet — total cap = pool_size × value
     lns_multi_random_seed: int = 42
     lns_multi_destroy_ratio: float = 0.33        # fraction of least-filled pallets destroyed each iteration (at least 1)
     lns_multi_repair_top_k: int   = 3             # pick randomly from top-k valid positions during repair
 
     # ── Post-processing LNS — budget ───────────────────────────────────────────
-    pp_time_per_pallet: float = 0.5  # seconds per pallet per group — total = group_size × value
     pp_iter_per_pallet: int   = 20   # iterations per pallet per group; split 50/50 fill/P2 phase
     pp_top_k:          int   = 2        # candidate pool for placement and donor/recip selection
     pp_random_seed:    int   = 7        # reproducibility

@@ -178,7 +178,6 @@ def _lns_pass(
     box_lookup: dict,
     params: OptimizationParameters,
     rng: random.Random,
-    time_limit: float,
     max_iterations: int,
     label: str,
     cost_fn: Callable,
@@ -200,7 +199,6 @@ def _lns_pass(
         box_lookup:      Mapping box_id → original Box.
         params:          Optimization parameters.
         rng:             Shared random state.
-        time_limit:      Wall-clock budget for this pass (seconds).
         max_iterations:  Maximum iterations for this pass.
         label:           Log prefix (e.g. "[LNS-multi]").
         cost_fn:         Cost function (pallets, params) → float.
@@ -222,8 +220,7 @@ def _lns_pass(
 
     print(f"{label} Starting. Cost: {best_cost:.2f}, pallets: {len(best_pallets)}")
 
-    while (iteration < max_iterations and
-           time.time() - start_time < time_limit):
+    while iteration < max_iterations:
 
         iteration += 1
 
@@ -351,13 +348,11 @@ def lns_multi_client(
               f"({len(pool) - len(extra_ids)} multi + {len(extra_ids)} Phase-3 leftover mono).")
 
     pool_size   = len(pool)
-    time_budget = max(1.0, pool_size * params.lns_multi_time_per_pallet)
-    iter_budget = max(1,   pool_size * params.lns_multi_iter_per_pallet)
+    iter_budget = max(1, pool_size * params.lns_multi_iter_per_pallet)
     print(f"[LNS-multi] Budget: {pool_size} palettes × "
-          f"{params.lns_multi_time_per_pallet}s = {time_budget:.1f}s / {iter_budget} iters")
+          f"{params.lns_multi_iter_per_pallet} iters = {iter_budget} iters")
     improved_pool = _lns_pass(
         pool, box_lookup, params, rng,
-        time_limit=time_budget,
         max_iterations=iter_budget,
         label="[LNS-multi]",
         cost_fn=compute_cost_multi,

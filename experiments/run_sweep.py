@@ -52,37 +52,28 @@ SWEEP_GRID = [
     # ── Référence ───────────────────────────────────────────────────────────────
     {"name": "baseline"},
 
-    # ── Groupe A : mono — temps par palette ─────────────────────────────────────
-    {"name": "mono_tp005", "lns_mono_time_per_pallet": 0.05},
-    {"name": "mono_tp010", "lns_mono_time_per_pallet": 0.10},
-    {"name": "mono_tp020", "lns_mono_time_per_pallet": 0.20},
-    {"name": "mono_tp050", "lns_mono_time_per_pallet": 0.50},
-
-    # ── Groupe A2 : mono — itérations par palette ────────────────────────────────
+    # ── Groupe A : mono — itérations par palette ─────────────────────────────────
     {"name": "mono_ip3",  "lns_mono_iter_per_pallet": 3},
     {"name": "mono_ip5",  "lns_mono_iter_per_pallet": 5},
     {"name": "mono_ip10", "lns_mono_iter_per_pallet": 10},
+    {"name": "mono_ip20", "lns_mono_iter_per_pallet": 20},
 
-    # ── Groupe B : multi — temps par palette ─────────────────────────────────────
-    {"name": "multi_tp05", "lns_multi_time_per_pallet": 0.5},
-    {"name": "multi_tp10", "lns_multi_time_per_pallet": 1.0},
-    {"name": "multi_tp20", "lns_multi_time_per_pallet": 2.0},
-
-    # ── Groupe B2 : multi — itérations par palette ───────────────────────────────
+    # ── Groupe B : multi — itérations par palette ─────────────────────────────────
     {"name": "multi_ip5",  "lns_multi_iter_per_pallet":  5},
     {"name": "multi_ip10", "lns_multi_iter_per_pallet": 10},
     {"name": "multi_ip20", "lns_multi_iter_per_pallet": 20},
+    {"name": "multi_ip30", "lns_multi_iter_per_pallet": 30},
 
-    # ── Groupe C : post-processing — temps par palette ───────────────────────────
-    {"name": "pp_tp1", "pp_time_per_pallet": 1.0, "pp_iter_per_pallet": 15},
-    {"name": "pp_tp2", "pp_time_per_pallet": 2.0, "pp_iter_per_pallet": 30},
-    {"name": "pp_tp4", "pp_time_per_pallet": 4.0, "pp_iter_per_pallet": 60},
+    # ── Groupe C : post-processing — itérations par palette ──────────────────────
+    {"name": "pp_ip10", "pp_iter_per_pallet": 10},
+    {"name": "pp_ip20", "pp_iter_per_pallet": 20},
+    {"name": "pp_ip40", "pp_iter_per_pallet": 40},
 
     # ── Config « slim » candidate — à ajuster après analyse ─────────────────────
     # {"name": "slim_candidate",
-    #  "lns_mono_time_per_pallet": 0.1, "lns_mono_iter_per_pallet": 5,
-    #  "lns_multi_time_per_pallet": 1.0, "lns_multi_iter_per_pallet": 10,
-    #  "pp_time_per_pallet": 2.0, "pp_iter_per_pallet": 30},
+    #  "lns_mono_iter_per_pallet": 5,
+    #  "lns_multi_iter_per_pallet": 10,
+    #  "pp_iter_per_pallet": 20},
 ]
 
 
@@ -213,9 +204,9 @@ def _run_pipeline(params: OptimizationParameters) -> tuple[list, str]:
 
 _FIELDNAMES = [
     "config_name",
-    "lns_mono_time_per_pallet", "lns_mono_iter_per_pallet",
-    "lns_multi_time_per_pallet", "lns_multi_iter_per_pallet",
-    "pp_time_per_pallet", "pp_iter_per_pallet",
+    "lns_mono_iter_per_pallet",
+    "lns_multi_iter_per_pallet",
+    "pp_iter_per_pallet",
     "total_runtime_s", "final_pallets",
     "mono_iters", "mono_improvements", "mono_stagnation", "mono_stag_pct",
     "mono_elapsed_s", "mono_pal_delta",
@@ -343,12 +334,9 @@ if __name__ == "__main__":
 
         row = {
             "config_name":              name,
-            "lns_mono_time_per_pallet": params.lns_mono_time_per_pallet,
-            "lns_mono_iter_per_pallet": params.lns_mono_iter_per_pallet,
-            "lns_multi_time_per_pallet":params.lns_multi_time_per_pallet,
-            "lns_multi_iter_per_pallet":params.lns_multi_iter_per_pallet,
-            "pp_time_per_pallet":       params.pp_time_per_pallet,
-            "pp_iter_per_pallet":       params.pp_iter_per_pallet,
+            "lns_mono_iter_per_pallet":  params.lns_mono_iter_per_pallet,
+            "lns_multi_iter_per_pallet": params.lns_multi_iter_per_pallet,
+            "pp_iter_per_pallet":        params.pp_iter_per_pallet,
             "total_runtime_s":    total_runtime,
             **stats,
         }

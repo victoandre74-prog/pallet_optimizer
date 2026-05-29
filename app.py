@@ -587,9 +587,6 @@ def _build_layout() -> html.Div:
 
         _details_group("Paramètres avancés - LNS Mono", [
             _sub_header("Budget"),
-            _param_field("Temps par palette (s)", "p-lns-mono-time-per-pallet",
-                         DEFAULTS["lns_mono_time_per_pallet"], step=0.05,
-                         hint="Budget temps par palette du groupe. Ex : 0.1s × 40 pal = 4s total."),
             _param_field("Itérations par palette", "p-lns-mono-iter-per-pallet",
                          DEFAULTS["lns_mono_iter_per_pallet"], step=1,
                          hint="Nombre d'itérations allouées par palette. Ex : 5 × 40 pal = 200 iters."),
@@ -614,9 +611,6 @@ def _build_layout() -> html.Div:
 
         html.Div(_details_group("Paramètres avancés - LNS Multi", [
             _sub_header("Budget"),
-            _param_field("Temps par palette (s)", "p-lns-multi-time-per-pallet",
-                         DEFAULTS["lns_multi_time_per_pallet"], step=0.5,
-                         hint="Budget temps par palette du pool multi. Ex : 1s × 10 pal = 10s total."),
             _param_field("Itérations par palette", "p-lns-multi-iter-per-pallet",
                          DEFAULTS["lns_multi_iter_per_pallet"], step=1,
                          hint="Nombre d'itérations allouées par palette. Ex : 10 × 10 pal = 100 iters."),
@@ -638,9 +632,6 @@ def _build_layout() -> html.Div:
 
         html.Div(_details_group("Paramètres avancés - Post-traitement", [
             _sub_header("Budget"),
-            _param_field("Temps par palette (s)", "p-pp-time-per-pallet",
-                         DEFAULTS["pp_time_per_pallet"], step=0.5,
-                         hint="Budget temps par palette du groupe. Ex : 2s × 3 pal = 6s total."),
             _param_field("Itérations par palette", "p-pp-iter-per-pallet",
                          DEFAULTS["pp_iter_per_pallet"], step=5,
                          hint="Nombre d'itérations allouées par palette. Ex : 30 × 3 pal = 90 iters."),
@@ -991,7 +982,6 @@ def update_export_estimate(csv_path):
     State("p-multi-client-minimum-ratio", "value"),
     State("p-multi-client-maximum-ratio", "value"),
     # LNS mono
-    State("p-lns-mono-time-per-pallet", "value"),
     State("p-lns-mono-iter-per-pallet", "value"),
     State("p-lns-mono-random-seed", "value"),
     State("p-lns-mono-small-box-volume", "value"),
@@ -999,14 +989,12 @@ def update_export_estimate(csv_path):
     State("p-cost-mono-pallet-count", "value"),
     State("p-cost-mono-last-pallet-filling", "value"),
     # LNS multi
-    State("p-lns-multi-time-per-pallet", "value"),
     State("p-lns-multi-iter-per-pallet", "value"),
     State("p-lns-multi-random-seed", "value"),
     State("p-lns-multi-destroy-ratio", "value"),
     State("p-lns-multi-repair-top-k", "value"),
     State("p-cost-multi-pallet-count", "value"),
     # Post-traitement
-    State("p-pp-time-per-pallet", "value"),
     State("p-pp-iter-per-pallet", "value"),
     State("p-pp-random-seed", "value"),
     State("p-pp-top-k", "value"),
@@ -1022,12 +1010,12 @@ def launch_run(n_clicks, input_dir, output_dir, multi_client, post_pro,
                pallet_length, pallet_width, pallet_max_height, pallet_max_weight,
                min_support_ratio, stability_ratio, priority2_max_deposit_height,
                min_filling_ratio, multi_client_minimum_ratio, multi_client_maximum_ratio,
-               lns_mono_time_per_pallet, lns_mono_iter_per_pallet, lns_mono_random_seed,
+               lns_mono_iter_per_pallet, lns_mono_random_seed,
                lns_mono_small_box_volume, lns_mono_repair_top_k,
                cost_mono_pallet_count, cost_mono_last_pallet_filling,
-               lns_multi_time_per_pallet, lns_multi_iter_per_pallet, lns_multi_random_seed,
+               lns_multi_iter_per_pallet, lns_multi_random_seed,
                lns_multi_destroy_ratio, lns_multi_repair_top_k, cost_multi_pallet_count,
-               pp_time_per_pallet, pp_iter_per_pallet, pp_random_seed, pp_top_k,
+               pp_iter_per_pallet, pp_random_seed, pp_top_k,
                pp_w_contact, pp_w_fill, pp_w_p2, pp_w_height, pp_w_stability,
                pp_center_min_shift):
 
@@ -1049,20 +1037,17 @@ def launch_run(n_clicks, input_dir, output_dir, multi_client, post_pro,
         "multi_client_minimum_ratio": multi_client_minimum_ratio,
         "multi_client_maximum_ratio": multi_client_maximum_ratio,
         "enable_post_processing": "on" in (post_pro or []),
-        "lns_mono_time_per_pallet":  lns_mono_time_per_pallet,
         "lns_mono_iter_per_pallet":  _int(lns_mono_iter_per_pallet),
         "lns_mono_random_seed":      _int(lns_mono_random_seed),
         "lns_mono_small_box_volume": lns_mono_small_box_volume,
         "lns_mono_repair_top_k":     _int(lns_mono_repair_top_k),
         "cost_mono_pallet_count":         cost_mono_pallet_count,
         "cost_mono_last_pallet_filling":  cost_mono_last_pallet_filling,
-        "lns_multi_time_per_pallet": lns_multi_time_per_pallet,
         "lns_multi_iter_per_pallet": _int(lns_multi_iter_per_pallet),
         "lns_multi_random_seed":     _int(lns_multi_random_seed),
         "lns_multi_destroy_ratio":   lns_multi_destroy_ratio,
         "lns_multi_repair_top_k":    _int(lns_multi_repair_top_k),
         "cost_multi_pallet_count":   cost_multi_pallet_count,
-        "pp_time_per_pallet": pp_time_per_pallet,
         "pp_iter_per_pallet": _int(pp_iter_per_pallet),
         "pp_random_seed": _int(pp_random_seed),
         "pp_top_k": _int(pp_top_k),
@@ -1463,7 +1448,6 @@ _STYLE_DISABLED = {"opacity": "0.4", "pointerEvents": "none", "userSelect": "non
     Output("p-multi-client-minimum-ratio", "disabled"),
     Output("p-multi-client-maximum-ratio", "disabled"),
     Output("lns-multi-param-wrapper", "style"),
-    Output("p-lns-multi-time-per-pallet", "disabled"),
     Output("p-lns-multi-iter-per-pallet", "disabled"),
     Output("p-lns-multi-random-seed", "disabled"),
     Output("p-lns-multi-destroy-ratio", "disabled"),
@@ -1475,12 +1459,11 @@ def toggle_mc_params(value):
     enabled = "on" in (value or [])
     dis = not enabled
     style = _STYLE_ENABLED if enabled else _STYLE_DISABLED
-    return style, dis, dis, dis, style, dis, dis, dis, dis, dis, dis
+    return style, dis, dis, dis, style, dis, dis, dis, dis, dis
 
 
 @app.callback(
     Output("pp-param-wrapper", "style"),
-    Output("p-pp-time-per-pallet", "disabled"),
     Output("p-pp-iter-per-pallet", "disabled"),
     Output("p-pp-random-seed", "disabled"),
     Output("p-pp-w-contact", "disabled"),
@@ -1496,7 +1479,7 @@ def toggle_pp_params(value):
     enabled = "on" in (value or [])
     dis = not enabled
     style = _STYLE_ENABLED if enabled else _STYLE_DISABLED
-    return style, dis, dis, dis, dis, dis, dis, dis, dis, dis, dis
+    return style, dis, dis, dis, dis, dis, dis, dis, dis, dis
 
 
 # ── Auto-scroll du log via callback côté client ───────────────────────────────
