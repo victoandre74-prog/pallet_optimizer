@@ -5,7 +5,41 @@ Centralizing all tunable parameters here makes it easy to adjust
 the optimizer's behavior without touching the algorithmic code.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
+
+
+PARAM_BOUNDS: dict[str, tuple] = {
+    "pallet_length":                 (1,     300),
+    "pallet_width":                  (1,     300),
+    "pallet_max_height":             (1,     300),
+    "pallet_max_weight":             (1,     1000),
+    "min_support_ratio":             (0.2,   1.0),
+    "stability_ratio":               (0.1,   20.0),
+    "priority2_max_deposit_height":  (0,     300),
+    "multi_client_minimum_ratio":    (0.0,   1.0),
+    "multi_client_maximum_ratio":    (0.0,   1.0),
+    "min_filling_ratio":             (0.0,   1.0),
+    "cost_mono_pallet_count":        (0,     100_000),
+    "cost_mono_last_pallet_filling": (0,     100_000),
+    "cost_multi_pallet_count":       (0,     100_000),
+    "lns_mono_small_box_volume":     (0,     100_000_000),
+    "lns_mono_repair_top_k":         (1,     10),
+    "lns_mono_iter_per_pallet":      (1,     200),
+    "lns_mono_random_seed":          (0,     2**31),
+    "lns_multi_iter_per_pallet":     (1,     200),
+    "lns_multi_random_seed":         (0,     2**31),
+    "lns_multi_destroy_ratio":       (0.01,  1.0),
+    "lns_multi_repair_top_k":        (1,     10),
+    "pp_iter_per_pallet":            (1,     200),
+    "pp_top_k":                      (1,     10),
+    "pp_random_seed":                (0,     2**31),
+    "pp_w_contact":                  (0,     1_000_000),
+    "pp_w_fill":                     (0,     1_000_000),
+    "pp_w_p2":                       (0,     1_000_000),
+    "pp_w_height":                   (0,     1_000_000),
+    "pp_w_stability":                (0,     1_000_000),
+    "pp_center_min_shift":           (0,     150),
+}
 
 
 @dataclass
@@ -158,3 +192,22 @@ class OptimizationParameters:
 
     # ── Post-processing — centering ────────────────────────────────────────────
     pp_center_min_shift: float = 5.0    # minimum shift (cm) to apply centering in X or Y
+
+    def __post_init__(self) -> None:
+        errors: list[str] = []
+        for f in fields(self):
+            if f.name not in PARAM_BOUNDS:
+                continue
+            val = getattr(self, f.name)
+            lo, hi = PARAM_BOUNDS[f.name]
+            if not (lo <= val <= hi):
+                errors.append(f"{f.name}={val!r}  (plage autorisée : [{lo}, {hi}])")
+        if self.multi_client_minimum_ratio >= self.multi_client_maximum_ratio:
+            errors.append(
+                "multi_client_minimum_ratio doit être strictement inférieur à "
+                "multi_client_maximum_ratio"
+            )
+        if errors:
+            raise ValueError(
+                "Paramètres invalides :\n" + "\n".join(f"  • {e}" for e in errors)
+            )

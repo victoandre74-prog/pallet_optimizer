@@ -24,7 +24,7 @@ _DIR = os.path.dirname(os.path.abspath(__file__))
 if _DIR not in sys.path:
     sys.path.insert(0, _DIR)
 
-from config.parameters import OptimizationParameters
+from config.parameters import OptimizationParameters, PARAM_BOUNDS
 
 
 def _load_logo(filename: str) -> str:
@@ -435,12 +435,16 @@ def _section_title(num: str, text: str) -> html.Div:
     ], style=S["section_title"])
 
 
-def _param_field(label: str, input_id: str, value, step=None, hint: str = "") -> html.Div:
+def _param_field(label: str, input_id: str, value, step=None, hint: str = "",
+                 min_val=None, max_val=None) -> html.Div:
     """Un champ de paramètre : étiquette + input numérique + hint."""
-    inp_type = "number"
-    inp_kwargs = {"value": value, "id": input_id, "type": inp_type, "style": S["input"]}
+    inp_kwargs = {"value": value, "id": input_id, "type": "number", "style": S["input"]}
     if step is not None:
         inp_kwargs["step"] = step
+    if min_val is not None:
+        inp_kwargs["min"] = min_val
+    if max_val is not None:
+        inp_kwargs["max"] = max_val
     return html.Div([
         html.Label(label, style=S["label"]),
         dcc.Input(**inp_kwargs),
@@ -546,120 +550,150 @@ def _build_layout() -> html.Div:
         _details_group("Dimensions de la palette", [
             _param_field("Longueur (cm) — axe X", "p-pallet-length",
                          DEFAULTS["pallet_length"], step=1,
-                         hint="Ex : 130 cm pour une palette standard EUR"),
+                         hint="Ex : 130 cm pour une palette standard EUR",
+                         min_val=PARAM_BOUNDS["pallet_length"][0], max_val=PARAM_BOUNDS["pallet_length"][1]),
             _param_field("Largeur (cm) — axe Y", "p-pallet-width",
                          DEFAULTS["pallet_width"], step=1,
-                         hint="Ex : 80 cm pour une palette standard EUR"),
+                         hint="Ex : 80 cm pour une palette standard EUR",
+                         min_val=PARAM_BOUNDS["pallet_width"][0], max_val=PARAM_BOUNDS["pallet_width"][1]),
             _param_field("Hauteur max (cm) — axe Z", "p-pallet-max-height",
                          DEFAULTS["pallet_max_height"], step=1,
-                         hint="Hauteur maximale d'empilement"),
+                         hint="Hauteur maximale d'empilement",
+                         min_val=PARAM_BOUNDS["pallet_max_height"][0], max_val=PARAM_BOUNDS["pallet_max_height"][1]),
             _param_field("Poids max (kg)", "p-pallet-max-weight",
                          DEFAULTS["pallet_max_weight"], step=10,
-                         hint="Capacité de charge maximale"),
+                         hint="Capacité de charge maximale",
+                         min_val=PARAM_BOUNDS["pallet_max_weight"][0], max_val=PARAM_BOUNDS["pallet_max_weight"][1]),
         ], open_by_default=True),
 
         _details_group("Contraintes physiques et stabilité", [
             _param_field("Ratio de support minimum", "p-min-support-ratio",
                          DEFAULTS["min_support_ratio"], step=0.01,
-                         hint="Fraction de la base devant reposer sur un support (0.75 = 75 %)"),
+                         hint="Fraction de la base devant reposer sur un support (0.75 = 75 %)",
+                         min_val=PARAM_BOUNDS["min_support_ratio"][0], max_val=PARAM_BOUNDS["min_support_ratio"][1]),
             _param_field("Ratio de stabilité", "p-stability-ratio",
                          DEFAULTS["stability_ratio"], step=0.1,
-                         hint="Rapport max hauteur/base d'une pile — empêche les tours instables"),
+                         hint="Rapport max hauteur/base d'une pile — empêche les tours instables",
+                         min_val=PARAM_BOUNDS["stability_ratio"][0], max_val=PARAM_BOUNDS["stability_ratio"][1]),
         ], open_by_default=True),
 
         _details_group("Contrainte ergonomique", [
             _param_field("Hauteur max dépôt P2 (cm)", "p-priority2-max-deposit-height",
                          DEFAULTS["priority2_max_deposit_height"], step=5,
-                         hint="Hauteur max à laquelle le bas d'un colis priorité 2 peut être déposé manuellement"),
+                         hint="Hauteur max à laquelle le bas d'un colis priorité 2 peut être déposé manuellement",
+                         min_val=PARAM_BOUNDS["priority2_max_deposit_height"][0], max_val=PARAM_BOUNDS["priority2_max_deposit_height"][1]),
         ], open_by_default=True),
 
         html.Div(_details_group("Repacking Multi-Client", [
             _param_field("Seuil de remplissage min.", "p-min-filling-ratio",
                          DEFAULTS["min_filling_ratio"], step=0.01,
-                         hint="Régime ≤10 palettes : on continue de fusionner tant que la moyenne du remplissage du futur pool multi reste sous ce seuil (0.30 = 30 %)."),
+                         hint="Régime ≤10 palettes : on continue de fusionner tant que la moyenne du remplissage du futur pool multi reste sous ce seuil (0.30 = 30 %).",
+                         min_val=PARAM_BOUNDS["min_filling_ratio"][0], max_val=PARAM_BOUNDS["min_filling_ratio"][1]),
             _param_field("Seuil d'arrêt multi-client (min)", "p-multi-client-minimum-ratio",
                          DEFAULTS["multi_client_minimum_ratio"], step=0.01,
-                         hint="Régime ≥11 palettes : arrêt doux quand multi/total > ce seuil ET la palette mono la moins remplie est déjà bien remplie (0.13 = 13 %)."),
+                         hint="Régime ≥11 palettes : arrêt doux quand multi/total > ce seuil ET la palette mono la moins remplie est déjà bien remplie (0.13 = 13 %).",
+                         min_val=PARAM_BOUNDS["multi_client_minimum_ratio"][0], max_val=PARAM_BOUNDS["multi_client_minimum_ratio"][1]),
             _param_field("Seuil d'arrêt multi-client (max)", "p-multi-client-maximum-ratio",
                          DEFAULTS["multi_client_maximum_ratio"], step=0.01,
-                         hint="Régime ≥11 palettes : arrêt forcé dès que multi/total > ce seuil, quelles que soient les conditions (0.17 = 17 %)."),
+                         hint="Régime ≥11 palettes : arrêt forcé dès que multi/total > ce seuil, quelles que soient les conditions (0.17 = 17 %).",
+                         min_val=PARAM_BOUNDS["multi_client_maximum_ratio"][0], max_val=PARAM_BOUNDS["multi_client_maximum_ratio"][1]),
         ], open_by_default=True), id="mc-param-wrapper"),
 
         _details_group("Paramètres avancés - LNS Mono", [
             _sub_header("Budget"),
             _param_field("Itérations par palette", "p-lns-mono-iter-per-pallet",
                          DEFAULTS["lns_mono_iter_per_pallet"], step=1,
-                         hint="Nombre d'itérations allouées par palette. Ex : 5 × 40 pal = 200 iters."),
+                         hint="Nombre d'itérations allouées par palette. Ex : 5 × 40 pal = 200 iters.",
+                         min_val=PARAM_BOUNDS["lns_mono_iter_per_pallet"][0], max_val=PARAM_BOUNDS["lns_mono_iter_per_pallet"][1]),
             _param_field("Graine aléatoire", "p-lns-mono-random-seed",
                          DEFAULTS["lns_mono_random_seed"], step=1,
-                         hint="Graine pour reproductibilité."),
+                         hint="Graine pour reproductibilité.",
+                         min_val=PARAM_BOUNDS["lns_mono_random_seed"][0], max_val=PARAM_BOUNDS["lns_mono_random_seed"][1]),
             _sub_header("Comportement"),
             _param_field("Volume petit colis (cm³)", "p-lns-mono-small-box-volume",
                          DEFAULTS["lns_mono_small_box_volume"], step=1000,
-                         hint="Colis sous ce volume extraits des palettes survivantes à chaque itération."),
+                         hint="Colis sous ce volume extraits des palettes survivantes à chaque itération.",
+                         min_val=PARAM_BOUNDS["lns_mono_small_box_volume"][0], max_val=PARAM_BOUNDS["lns_mono_small_box_volume"][1]),
             _param_field("Pool de positions (top-k)", "p-lns-mono-repair-top-k",
                          DEFAULTS["lns_mono_repair_top_k"], step=1,
-                         hint="Tirage aléatoire parmi les k meilleures positions EP × orientation."),
+                         hint="Tirage aléatoire parmi les k meilleures positions EP × orientation.",
+                         min_val=PARAM_BOUNDS["lns_mono_repair_top_k"][0], max_val=PARAM_BOUNDS["lns_mono_repair_top_k"][1]),
             _sub_header("Fonction de coût"),
             _param_field("Poids nombre de palettes", "p-cost-mono-pallet-count",
                          DEFAULTS["cost_mono_pallet_count"], step=10,
-                         hint="Pénalité par palette supplémentaire."),
+                         hint="Pénalité par palette supplémentaire.",
+                         min_val=PARAM_BOUNDS["cost_mono_pallet_count"][0], max_val=PARAM_BOUNDS["cost_mono_pallet_count"][1]),
             _param_field("Poids remplissage dernière palette", "p-cost-mono-last-pallet-filling",
                          DEFAULTS["cost_mono_last_pallet_filling"], step=10,
-                         hint="Pénalise le taux de remplissage élevé de la palette la moins remplie."),
+                         hint="Pénalise le taux de remplissage élevé de la palette la moins remplie.",
+                         min_val=PARAM_BOUNDS["cost_mono_last_pallet_filling"][0], max_val=PARAM_BOUNDS["cost_mono_last_pallet_filling"][1]),
         ]),
 
         html.Div(_details_group("Paramètres avancés - LNS Multi", [
             _sub_header("Budget"),
             _param_field("Itérations par palette", "p-lns-multi-iter-per-pallet",
                          DEFAULTS["lns_multi_iter_per_pallet"], step=1,
-                         hint="Nombre d'itérations allouées par palette. Ex : 10 × 10 pal = 100 iters."),
+                         hint="Nombre d'itérations allouées par palette. Ex : 10 × 10 pal = 100 iters.",
+                         min_val=PARAM_BOUNDS["lns_multi_iter_per_pallet"][0], max_val=PARAM_BOUNDS["lns_multi_iter_per_pallet"][1]),
             _param_field("Graine aléatoire", "p-lns-multi-random-seed",
                          DEFAULTS["lns_multi_random_seed"], step=1,
-                         hint="Graine pour reproductibilité."),
+                         hint="Graine pour reproductibilité.",
+                         min_val=PARAM_BOUNDS["lns_multi_random_seed"][0], max_val=PARAM_BOUNDS["lns_multi_random_seed"][1]),
             _sub_header("Comportement"),
             _param_field("Ratio destruction (destroy_ratio)", "p-lns-multi-destroy-ratio",
                          DEFAULTS["lns_multi_destroy_ratio"], step=0.01,
-                         hint="Fraction des palettes les moins remplies détruites à chaque itération (min 1)."),
+                         hint="Fraction des palettes les moins remplies détruites à chaque itération (min 1).",
+                         min_val=PARAM_BOUNDS["lns_multi_destroy_ratio"][0], max_val=PARAM_BOUNDS["lns_multi_destroy_ratio"][1]),
             _param_field("Pool de positions (top-k)", "p-lns-multi-repair-top-k",
                          DEFAULTS["lns_multi_repair_top_k"], step=1,
-                         hint="Tirage aléatoire parmi les k meilleures positions lors de la réparation."),
+                         hint="Tirage aléatoire parmi les k meilleures positions lors de la réparation.",
+                         min_val=PARAM_BOUNDS["lns_multi_repair_top_k"][0], max_val=PARAM_BOUNDS["lns_multi_repair_top_k"][1]),
             _sub_header("Fonction de coût"),
             _param_field("Poids nombre de palettes", "p-cost-multi-pallet-count",
                          DEFAULTS["cost_multi_pallet_count"], step=1,
-                         hint="Pénalité par palette supplémentaire (multi-client)."),
+                         hint="Pénalité par palette supplémentaire (multi-client).",
+                         min_val=PARAM_BOUNDS["cost_multi_pallet_count"][0], max_val=PARAM_BOUNDS["cost_multi_pallet_count"][1]),
         ]), id="lns-multi-param-wrapper"),
 
         html.Div(_details_group("Paramètres avancés - Post-traitement", [
             _sub_header("Budget"),
             _param_field("Itérations par palette", "p-pp-iter-per-pallet",
                          DEFAULTS["pp_iter_per_pallet"], step=5,
-                         hint="Nombre d'itérations allouées par palette. Ex : 30 × 3 pal = 90 iters."),
+                         hint="Nombre d'itérations allouées par palette. Ex : 30 × 3 pal = 90 iters.",
+                         min_val=PARAM_BOUNDS["pp_iter_per_pallet"][0], max_val=PARAM_BOUNDS["pp_iter_per_pallet"][1]),
             _param_field("Graine aléatoire", "p-pp-random-seed",
                          DEFAULTS["pp_random_seed"], step=1,
-                         hint="Graine pour reproductibilité."),
+                         hint="Graine pour reproductibilité.",
+                         min_val=PARAM_BOUNDS["pp_random_seed"][0], max_val=PARAM_BOUNDS["pp_random_seed"][1]),
             _param_field("Pool de candidats (top_k)", "p-pp-top-k",
                          DEFAULTS["pp_top_k"], step=1,
-                         hint="Taille du pool de positions candidates lors du placement."),
+                         hint="Taille du pool de positions candidates lors du placement.",
+                         min_val=PARAM_BOUNDS["pp_top_k"][0], max_val=PARAM_BOUNDS["pp_top_k"][1]),
             _sub_header("Pondérations"),
             _param_field("Poids contact P2→P1", "p-pp-w-contact",
                          DEFAULTS["pp_w_contact"], step=1.0,
-                         hint="Récompense / cm² de contact vertical P2→P1."),
+                         hint="Récompense / cm² de contact vertical P2→P1.",
+                         min_val=PARAM_BOUNDS["pp_w_contact"][0], max_val=PARAM_BOUNDS["pp_w_contact"][1]),
             _param_field("Poids variance remplissage", "p-pp-w-fill",
                          DEFAULTS["pp_w_fill"], step=0.5,
-                         hint="Pénalité sur la variance du taux de remplissage entre palettes."),
+                         hint="Pénalité sur la variance du taux de remplissage entre palettes.",
+                         min_val=PARAM_BOUNDS["pp_w_fill"][0], max_val=PARAM_BOUNDS["pp_w_fill"][1]),
             _param_field("Poids variance P2", "p-pp-w-p2",
                          DEFAULTS["pp_w_p2"], step=100.0,
-                         hint="Pénalité sur la variance du nombre de colis P2 entre palettes."),
+                         hint="Pénalité sur la variance du nombre de colis P2 entre palettes.",
+                         min_val=PARAM_BOUNDS["pp_w_p2"][0], max_val=PARAM_BOUNDS["pp_w_p2"][1]),
             _param_field("Poids hauteur moyenne", "p-pp-w-height",
                          DEFAULTS["pp_w_height"], step=1.0,
-                         hint="Pénalité sur le ratio hauteur/hauteur max moyen — favorise les palettes basses."),
+                         hint="Pénalité sur le ratio hauteur/hauteur max moyen — favorise les palettes basses.",
+                         min_val=PARAM_BOUNDS["pp_w_height"][0], max_val=PARAM_BOUNDS["pp_w_height"][1]),
             _param_field("Poids stabilité", "p-pp-w-stability",
                          DEFAULTS["pp_w_stability"], step=1.0,
-                         hint="Pénalité sur le pire ratio de stabilité — favorise les empilements stables."),
+                         hint="Pénalité sur le pire ratio de stabilité — favorise les empilements stables.",
+                         min_val=PARAM_BOUNDS["pp_w_stability"][0], max_val=PARAM_BOUNDS["pp_w_stability"][1]),
             _param_field("Décalage min centrage (cm)", "p-pp-center-min-shift",
                          DEFAULTS["pp_center_min_shift"], step=0.5,
-                         hint="Seuil de déplacement en cm pour appliquer le centrage de charge."),
+                         hint="Seuil de déplacement en cm pour appliquer le centrage de charge.",
+                         min_val=PARAM_BOUNDS["pp_center_min_shift"][0], max_val=PARAM_BOUNDS["pp_center_min_shift"][1]),
         ]), id="pp-param-wrapper"),
 
         # Bouton Lancer
@@ -1059,6 +1093,25 @@ def launch_run(n_clicks, input_dir, output_dir, multi_client, post_pro,
         "pp_center_min_shift": pp_center_min_shift,
     }
     params = {k: v for k, v in field_map.items() if v is not None}
+
+    # ── Validation des plages avant lancement ─────────────────────────────────
+    validation_errors: list[str] = []
+    for key, val in params.items():
+        if key not in PARAM_BOUNDS:
+            continue
+        lo, hi = PARAM_BOUNDS[key]
+        if not (lo <= val <= hi):
+            validation_errors.append(f"{key} = {val}  (plage autorisée : [{lo}, {hi}])")
+    if (multi_client_minimum_ratio is not None and multi_client_maximum_ratio is not None
+            and multi_client_minimum_ratio >= multi_client_maximum_ratio):
+        validation_errors.append(
+            "Seuil min multi-client doit être strictement inférieur au seuil max"
+        )
+    if validation_errors:
+        msg = "❌ Paramètres invalides — lancement annulé :\n" + "\n".join(
+            f"  • {e}" for e in validation_errors
+        )
+        return dash.no_update, False, msg
 
     runner = os.path.join(_DIR, "main.py")
 
