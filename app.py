@@ -601,6 +601,9 @@ def _build_layout() -> html.Div:
 
         _details_group("Paramètres avancés - LNS Mono", [
             _sub_header("Budget"),
+            _param_field("Temps par palette (s)", "p-lns-mono-time-per-pallet",
+                         DEFAULTS["lns_mono_time_per_pallet"], step=0.05,
+                         hint="Budget temps par palette du groupe. Ex : 0.7s × 40 pal = 28s total."),
             _param_field("Itérations par palette", "p-lns-mono-iter-per-pallet",
                          DEFAULTS["lns_mono_iter_per_pallet"], step=1,
                          hint="Nombre d'itérations allouées par palette. Ex : 5 × 40 pal = 200 iters.",
@@ -631,6 +634,9 @@ def _build_layout() -> html.Div:
 
         html.Div(_details_group("Paramètres avancés - LNS Multi", [
             _sub_header("Budget"),
+            _param_field("Temps par palette (s)", "p-lns-multi-time-per-pallet",
+                         DEFAULTS["lns_multi_time_per_pallet"], step=0.1,
+                         hint="Budget temps par palette du pool multi. Ex : 0.5s × 10 pal = 5s total."),
             _param_field("Itérations par palette", "p-lns-multi-iter-per-pallet",
                          DEFAULTS["lns_multi_iter_per_pallet"], step=1,
                          hint="Nombre d'itérations allouées par palette. Ex : 10 × 10 pal = 100 iters.",
@@ -657,6 +663,9 @@ def _build_layout() -> html.Div:
 
         html.Div(_details_group("Paramètres avancés - Post-traitement", [
             _sub_header("Budget"),
+            _param_field("Temps par palette (s)", "p-pp-time-per-pallet",
+                         DEFAULTS["pp_time_per_pallet"], step=0.1,
+                         hint="Budget temps par palette du groupe. Ex : 0.5s × 3 pal = 1.5s total."),
             _param_field("Itérations par palette", "p-pp-iter-per-pallet",
                          DEFAULTS["pp_iter_per_pallet"], step=1,
                          hint="Nombre d'itérations allouées par palette. Ex : 30 × 3 pal = 90 iters.",
@@ -695,6 +704,18 @@ def _build_layout() -> html.Div:
                          hint="Seuil de déplacement en cm pour appliquer le centrage de charge.",
                          min_val=PARAM_BOUNDS["pp_center_min_shift"][0], max_val=PARAM_BOUNDS["pp_center_min_shift"][1]),
         ]), id="pp-param-wrapper"),
+
+        # Parallélisme
+        html.Div(
+            _details_group("Parallélisation calcul", [
+                _param_field("Nombre de travailleurs parallèles", "p-max-workers", 1, step=1,
+                             hint="Fichiers CSV traités en parallèle (max 4). "
+                                  "Nécessite ≥ 4 CSV dans le dossier d'entrée.",
+                             min_val=1, max_val=4),
+            ]),
+            id="workers-param-wrapper",
+            style={"marginTop": "4px", "opacity": "0.4", "pointerEvents": "none", "userSelect": "none"},
+        ),
 
         # Bouton Lancer
         html.Div([
@@ -1016,6 +1037,7 @@ def update_export_estimate(csv_path):
     State("p-multi-client-minimum-ratio", "value"),
     State("p-multi-client-maximum-ratio", "value"),
     # LNS mono
+    State("p-lns-mono-time-per-pallet", "value"),
     State("p-lns-mono-iter-per-pallet", "value"),
     State("p-lns-mono-random-seed", "value"),
     State("p-lns-mono-small-box-volume", "value"),
@@ -1023,12 +1045,14 @@ def update_export_estimate(csv_path):
     State("p-cost-mono-pallet-count", "value"),
     State("p-cost-mono-last-pallet-filling", "value"),
     # LNS multi
+    State("p-lns-multi-time-per-pallet", "value"),
     State("p-lns-multi-iter-per-pallet", "value"),
     State("p-lns-multi-random-seed", "value"),
     State("p-lns-multi-destroy-ratio", "value"),
     State("p-lns-multi-repair-top-k", "value"),
     State("p-cost-multi-pallet-count", "value"),
     # Post-traitement
+    State("p-pp-time-per-pallet", "value"),
     State("p-pp-iter-per-pallet", "value"),
     State("p-pp-random-seed", "value"),
     State("p-pp-top-k", "value"),
@@ -1038,20 +1062,21 @@ def update_export_estimate(csv_path):
     State("p-pp-w-height", "value"),
     State("p-pp-w-stability", "value"),
     State("p-pp-center-min-shift", "value"),
+    State("p-max-workers", "value"),
     prevent_initial_call=True,
 )
 def launch_run(n_clicks, input_dir, output_dir, multi_client, post_pro,
                pallet_length, pallet_width, pallet_max_height, pallet_max_weight,
                min_support_ratio, stability_ratio, priority2_max_deposit_height,
                min_filling_ratio, multi_client_minimum_ratio, multi_client_maximum_ratio,
-               lns_mono_iter_per_pallet, lns_mono_random_seed,
+               lns_mono_time_per_pallet, lns_mono_iter_per_pallet, lns_mono_random_seed,
                lns_mono_small_box_volume, lns_mono_repair_top_k,
                cost_mono_pallet_count, cost_mono_last_pallet_filling,
-               lns_multi_iter_per_pallet, lns_multi_random_seed,
+               lns_multi_time_per_pallet, lns_multi_iter_per_pallet, lns_multi_random_seed,
                lns_multi_destroy_ratio, lns_multi_repair_top_k, cost_multi_pallet_count,
-               pp_iter_per_pallet, pp_random_seed, pp_top_k,
+               pp_time_per_pallet, pp_iter_per_pallet, pp_random_seed, pp_top_k,
                pp_w_contact, pp_w_fill, pp_w_p2, pp_w_height, pp_w_stability,
-               pp_center_min_shift):
+               pp_center_min_shift, max_workers):
 
     if not n_clicks or not input_dir or not output_dir:
         return dash.no_update, True, dash.no_update
@@ -1071,17 +1096,20 @@ def launch_run(n_clicks, input_dir, output_dir, multi_client, post_pro,
         "multi_client_minimum_ratio": multi_client_minimum_ratio,
         "multi_client_maximum_ratio": multi_client_maximum_ratio,
         "enable_post_processing": "on" in (post_pro or []),
+        "lns_mono_time_per_pallet":  lns_mono_time_per_pallet,
         "lns_mono_iter_per_pallet":  _int(lns_mono_iter_per_pallet),
         "lns_mono_random_seed":      _int(lns_mono_random_seed),
         "lns_mono_small_box_volume": lns_mono_small_box_volume,
         "lns_mono_repair_top_k":     _int(lns_mono_repair_top_k),
         "cost_mono_pallet_count":         cost_mono_pallet_count,
         "cost_mono_last_pallet_filling":  cost_mono_last_pallet_filling,
+        "lns_multi_time_per_pallet": lns_multi_time_per_pallet,
         "lns_multi_iter_per_pallet": _int(lns_multi_iter_per_pallet),
         "lns_multi_random_seed":     _int(lns_multi_random_seed),
         "lns_multi_destroy_ratio":   lns_multi_destroy_ratio,
         "lns_multi_repair_top_k":    _int(lns_multi_repair_top_k),
         "cost_multi_pallet_count":   cost_multi_pallet_count,
+        "pp_time_per_pallet": pp_time_per_pallet,
         "pp_iter_per_pallet": _int(pp_iter_per_pallet),
         "pp_random_seed": _int(pp_random_seed),
         "pp_top_k": _int(pp_top_k),
@@ -1120,6 +1148,7 @@ def launch_run(n_clicks, input_dir, output_dir, multi_client, post_pro,
         "--input-dir", input_dir,
         "--output-dir", output_dir,
         "--params-json", json.dumps(params),
+        "--max-workers", str(int(max_workers) if max_workers else 1),
     ]
 
     run_id = str(uuid.uuid4())
@@ -1224,15 +1253,18 @@ def poll_run(_, state):
         if stem in has_results:
             statuses.append("ok")
         elif stem in has_log_only:
-            statuses.append("fail" if done else "running")
+            if done:
+                statuses.append("fail")
+            else:
+                # Seek to last 8 KB only — negligible I/O (~500 µs per file).
+                # Marker absent → worker still running; present → finished with error.
+                code = _read_batch_status(log_by_stem[stem])
+                statuses.append("fail" if code else "running")
         else:
             statuses.append("pending")
 
-    # When the run is over, consult the batch-status contract marker (see
-    # _read_batch_status / main.py::BATCH_STATUS_MARKER) to catch silent
-    # failures: batches that produced a results CSV but were still flagged as
-    # failed by main.py (typically Phase 6 integrity check). File presence
-    # alone cannot tell those apart from true successes.
+    # When the run is over, catch silent failures: batches that produced a
+    # results CSV but were flagged failed by main.py (Phase 6 integrity check).
     if done:
         for i, stem in enumerate(input_stems):
             if statuses[i] != "ok":
@@ -1243,20 +1275,6 @@ def poll_run(_, state):
             code = _read_batch_status(log_path)
             if code and code != "OK":
                 statuses[i] = "fail"
-
-    # While proc is running, the file currently being processed has its log
-    # already written but no result yet. Treat only the LAST such entry as
-    # "running"; any earlier log-without-results means a genuine failure
-    # (main.py moved on to the next file).
-    if not done:
-        last_running = None
-        for i, s in enumerate(statuses):
-            if s == "running":
-                last_running = i
-        if last_running is not None:
-            for i in range(last_running):
-                if statuses[i] == "running":
-                    statuses[i] = "fail"
 
     lines = []
     for i, (stem, status) in enumerate(zip(input_stems, statuses), start=1):
@@ -1495,12 +1513,26 @@ def poll_export(_, state):
 _STYLE_ENABLED  = {}
 _STYLE_DISABLED = {"opacity": "0.4", "pointerEvents": "none", "userSelect": "none"}
 
+_WORKERS_BASE = {"marginTop": "4px"}
+
+
+@app.callback(
+    Output("workers-param-wrapper", "style"),
+    Input("input-dir", "value"),
+)
+def toggle_workers(folder):
+    n = _count_csvs(folder) if folder else 0
+    if n >= 4:
+        return _WORKERS_BASE
+    return {**_WORKERS_BASE, **_STYLE_DISABLED}
+
 @app.callback(
     Output("mc-param-wrapper", "style"),
     Output("p-min-filling-ratio", "disabled"),
     Output("p-multi-client-minimum-ratio", "disabled"),
     Output("p-multi-client-maximum-ratio", "disabled"),
     Output("lns-multi-param-wrapper", "style"),
+    Output("p-lns-multi-time-per-pallet", "disabled"),
     Output("p-lns-multi-iter-per-pallet", "disabled"),
     Output("p-lns-multi-random-seed", "disabled"),
     Output("p-lns-multi-destroy-ratio", "disabled"),
@@ -1512,11 +1544,12 @@ def toggle_mc_params(value):
     enabled = "on" in (value or [])
     dis = not enabled
     style = _STYLE_ENABLED if enabled else _STYLE_DISABLED
-    return style, dis, dis, dis, style, dis, dis, dis, dis, dis
+    return style, dis, dis, dis, style, dis, dis, dis, dis, dis, dis
 
 
 @app.callback(
     Output("pp-param-wrapper", "style"),
+    Output("p-pp-time-per-pallet", "disabled"),
     Output("p-pp-iter-per-pallet", "disabled"),
     Output("p-pp-random-seed", "disabled"),
     Output("p-pp-w-contact", "disabled"),
@@ -1532,7 +1565,7 @@ def toggle_pp_params(value):
     enabled = "on" in (value or [])
     dis = not enabled
     style = _STYLE_ENABLED if enabled else _STYLE_DISABLED
-    return style, dis, dis, dis, dis, dis, dis, dis, dis, dis
+    return style, dis, dis, dis, dis, dis, dis, dis, dis, dis, dis
 
 
 # ── Auto-scroll du log via callback côté client ───────────────────────────────

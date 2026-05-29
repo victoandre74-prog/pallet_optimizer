@@ -197,6 +197,7 @@ def _lns_pass(
     box_lookup: dict,
     params: OptimizationParameters,
     rng: random.Random,
+    time_limit: float,
     max_iterations: int,
     allow_multi_client: bool,
     label: str,
@@ -218,6 +219,7 @@ def _lns_pass(
         box_lookup:         Mapping box_id → original Box.
         params:             Optimization parameters.
         rng:                Shared random state.
+        time_limit:         Wall-clock budget for this pass (seconds).
         max_iterations:     Maximum iterations for this pass.
         allow_multi_client: When False, repair cannot mix clients on a pallet.
         label:              Log prefix (e.g. "[LNS-mono|client=1]").
@@ -240,7 +242,8 @@ def _lns_pass(
 
     print(f"{label} Starting. Cost: {best_cost:.2f}, pallets: {len(best_pallets)}")
 
-    while iteration < max_iterations:
+    while (iteration < max_iterations and
+           time.time() - start_time < time_limit):
 
         iteration += 1
 
@@ -384,13 +387,15 @@ def lns_mono_client(
             improved_all.extend(group)
             continue
 
-        iter_budget = max(1, len(group) * params.lns_mono_iter_per_pallet)
+        time_budget = max(1.0, len(group) * params.lns_mono_time_per_pallet)
+        iter_budget = max(1,   len(group) * params.lns_mono_iter_per_pallet)
 
         seed = params.lns_mono_random_seed ^ cid
         rng  = random.Random(seed)
 
         improved = _lns_pass(
             group, box_lookup, params, rng,
+            time_limit=time_budget,
             max_iterations=iter_budget,
             allow_multi_client=False,
             label=f"[LNS-mono|client={cid}]",

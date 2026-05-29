@@ -31,7 +31,6 @@ from heuristics.post_processing import postprocess
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 INPUT_DIR   = os.path.join(_BASE, r"input\tournee_type2026\SL18in")
-OUTPUT_FAKE = os.path.join(_BASE, r"output\profile_run_results.csv")
 PROF_FILE   = os.path.join(_DIR, "profile_output.prof")
 TOP_N       = 20
 
@@ -45,7 +44,7 @@ def pipeline():
     for csv_file in csv_files:
         fname   = os.path.basename(csv_file)
         boxes   = read_boxes_from_csv(csv_file)
-        pallets = optimize_palletization(boxes, params, output_path=OUTPUT_FAKE)
+        pallets = optimize_palletization(boxes, params)
         if params.enable_post_processing:
             pallets = postprocess(pallets, boxes, params)
         print(f"  {fname}: {len(pallets)} palette(s), {sum(len(p.boxes) for p in pallets)} colis")

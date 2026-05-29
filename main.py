@@ -15,9 +15,6 @@ re-validate it against the log. Integrity check failures, validation
 failures and unhandled exceptions all leave the log in place but skip
 the CSV write.
 
-Intermediate phase snapshots are written to the intermediate/
-sub-folder of --output-dir.
-
 Usage:
     python main.py
     python main.py --input-dir input/ --output-dir output/
@@ -27,10 +24,10 @@ Tune algorithm parameters directly in config/parameters.py.
 
 import argparse
 import os
-import shutil
 import sys
 import time
 import traceback
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 # Force UTF-8 output on Windows so box-drawing / ellipsis characters print correctly
@@ -43,17 +40,6 @@ if hasattr(sys.stderr, "reconfigure"):
 _DIR = os.path.dirname(os.path.abspath(__file__))
 if _DIR not in sys.path:
     sys.path.insert(0, _DIR)
-
-_INTERMEDIATE_DIR = Path(_DIR) / "intermediate"
-
-
-def _purge_intermediate() -> None:
-    """Purge le dossier intermédiaire avant chaque batch (fichiers de dev uniquement)."""
-    if _INTERMEDIATE_DIR.exists():
-        shutil.rmtree(_INTERMEDIATE_DIR, ignore_errors=True)
-    _INTERMEDIATE_DIR.mkdir(parents=True, exist_ok=True)
-    print(f"[Intermediate] Dossier purgé : {_INTERMEDIATE_DIR}")
-
 
 from config.parameters import OptimizationParameters
 
@@ -109,17 +95,19 @@ def _phase_footer(n: int) -> None:
 
 
 class _Tee:
-    """Mirrors writes to both the original stream and a file."""
-    def __init__(self, stream, path):
-        self._stream = stream
+    """Writes to a log file, optionally mirroring to the original stream."""
+    def __init__(self, stream, path, mirror: bool = True):
+        self._stream = stream if mirror else None
         self._file   = open(path, "w", encoding="utf-8", errors="replace")
 
     def write(self, data):
-        self._stream.write(data)
+        if self._stream:
+            self._stream.write(data)
         self._file.write(data)
 
     def flush(self):
-        self._stream.flush()
+        if self._stream:
+            self._stream.flush()
         self._file.flush()
 
     def close(self):
@@ -156,6 +144,13 @@ def parse_args():
         default="{}",
         help="JSON string of parameter overrides passed to OptimizationParameters."
     )
+    parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=1,
+        metavar="N",
+        help="Number of CSV files processed in parallel (default: 1 = sequential).",
+    )
     return parser.parse_args()
 
 
@@ -176,6 +171,7 @@ def _process_one(
     input_path: Path,
     output_dir: Path,
     params: OptimizationParameters,
+    quiet: bool = False,
 ) -> tuple:
     """Runs the full optimization pipeline for a single input CSV.
 
@@ -197,7 +193,8 @@ def _process_one(
     report_path   = output_dir / f"{stem}_log_{ts}.txt"
 
     # ── Start log ─────────────────────────────────────────────────────────────
-    tee = _Tee(sys.stdout, str(report_path))
+    _original_stdout = sys.stdout
+    tee = _Tee(sys.stdout, str(report_path), mirror=not quiet)
     sys.stdout = tee
 
     # Batch-status contract state. Every code path below MUST set these before
@@ -231,17 +228,20 @@ def _process_one(
         print(f"  multi_client_minimum_ratio : {params.multi_client_minimum_ratio}")
         print(f"  multi_client_maximum_ratio : {params.multi_client_maximum_ratio}")
         print(f"  --- LNS mono-client ---")
+        print(f"  lns_mono_time_per_pallet   : {params.lns_mono_time_per_pallet} s/palette")
         print(f"  lns_mono_small_box_volume  : {params.lns_mono_small_box_volume} cm³")
         print(f"  lns_mono_repair_top_k      : {params.lns_mono_repair_top_k}")
         print(f"  lns_mono_iter_per_pallet   : {params.lns_mono_iter_per_pallet} iters/palette")
         print(f"  lns_mono_random_seed       : {params.lns_mono_random_seed}")
         print(f"  --- LNS multi-client ---")
+        print(f"  lns_multi_time_per_pallet  : {params.lns_multi_time_per_pallet} s/palette")
         print(f"  lns_multi_iter_per_pallet  : {params.lns_multi_iter_per_pallet} iters/palette")
         print(f"  lns_multi_destroy_ratio    : {params.lns_multi_destroy_ratio}")
         print(f"  lns_multi_repair_top_k     : {params.lns_multi_repair_top_k}")
         print(f"  lns_multi_random_seed      : {params.lns_multi_random_seed}")
         print(f"  --- Post-processing ---")
         print(f"  enable_post_processing     : {params.enable_post_processing}")
+        print(f"  pp_time_per_pallet         : {params.pp_time_per_pallet} s/palette")
         print(f"  pp_iter_per_pallet         : {params.pp_iter_per_pallet} iters/palette")
         print(f"  pp_top_k                   : {params.pp_top_k}")
         print(f"  pp_random_seed             : {params.pp_random_seed}")
@@ -281,7 +281,7 @@ def _process_one(
         _phase_footer(0)
 
         # ── Phases 1–4: optimizer ─────────────────────────────────────────────
-        pallets = optimize_palletization(boxes, params, output_path=str(results_path))
+        pallets = optimize_palletization(boxes, params)
 
         # ── Phase 5: post-processing ──────────────────────────────────────────
         _phase_header(5, "Post-processing (P2 repartition, fill repartition, centering)")
@@ -453,7 +453,7 @@ def _process_one(
         # and closing the tee happen AFTER.  See BATCH_STATUS_MARKER docstring.
         _emit_batch_status(stem, status_code, status_detail)
 
-        sys.stdout = tee._stream
+        sys.stdout = _original_stdout
         tee.close()
         print(f"[Log] Execution report written to: {report_path}")
 
@@ -531,7 +531,6 @@ def main():
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    _purge_intermediate()
 
     input_files = _collect_inputs(args.input_dir)
 
@@ -543,26 +542,52 @@ def main():
         sys.exit(1)
     params = OptimizationParameters(**overrides)
 
-    print(f"[Batch] {len(input_files)} file(s) to process from '{args.input_dir}'")
+    max_workers = args.max_workers
+    if max_workers > 1 and len(input_files) < 4:
+        print(f"[Batch] Only {len(input_files)} file(s) — parallel mode requires ≥ 4, falling back to sequential.")
+        max_workers = 1
+    print(f"[Batch] {len(input_files)} file(s) to process from '{args.input_dir}'"
+          + (f" — {max_workers} parallel worker(s)" if max_workers > 1 else ""))
 
     t_batch_start = time.time()
     failed  = 0
     results = []  # collected per-file outcomes for the summary file
-    for i, input_path in enumerate(input_files, start=1):
-        print(f"\n[Batch] [{i}/{len(input_files)}] Processing: {input_path.name}")
-        ok, status_code, status_detail = _process_one(
-            input_path = input_path,
-            output_dir = output_dir,
-            params     = params,
-        )
-        if not ok:
-            failed += 1
-        results.append({
-            "name":          input_path.name,
-            "stem":          input_path.stem,
-            "status_code":   status_code,
-            "status_detail": status_detail,
-        })
+
+    if max_workers == 1:
+        for i, input_path in enumerate(input_files, start=1):
+            print(f"\n[Batch] [{i}/{len(input_files)}] Processing: {input_path.name}")
+            ok, status_code, status_detail = _process_one(input_path, output_dir, params)
+            if not ok:
+                failed += 1
+            results.append({
+                "name":          input_path.name,
+                "stem":          input_path.stem,
+                "status_code":   status_code,
+                "status_detail": status_detail,
+            })
+    else:
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            future_to_path = {
+                executor.submit(_process_one, p, output_dir, params, True): p
+                for p in input_files
+            }
+            completed = 0
+            for future in as_completed(future_to_path):
+                path = future_to_path[future]
+                completed += 1
+                try:
+                    ok, status_code, status_detail = future.result()
+                except Exception as e:
+                    ok, status_code, status_detail = False, "ERR_EXCEPTION", str(e)
+                print(f"[Batch] [{completed}/{len(input_files)}] Done: {path.name} → {status_code}")
+                if not ok:
+                    failed += 1
+                results.append({
+                    "name":          path.name,
+                    "stem":          path.stem,
+                    "status_code":   status_code,
+                    "status_detail": status_detail,
+                })
 
     print(f"\n[Batch] All {len(input_files)} file(s) processed — {failed} failure(s).")
 

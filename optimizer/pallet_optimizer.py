@@ -59,8 +59,7 @@ Phase 4 — LNS improvement (multi-client + Phase 3 leftover mono)
     reverts to the original 2 mono pallets if no improvement was made.
 """
 
-from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 from models.box import Box
 from models.pallet import Pallet
@@ -69,12 +68,6 @@ from heuristics.sorting import sort_boxes_for_packing, sort_boxes_by_client
 from heuristics.first_fit_decreasing import pack_boxes_ffd
 from heuristics.lns_mono import lns_mono_client
 from heuristics.lns_multi import lns_multi_client
-from file_io.csv_writer import write_results_to_csv
-
-
-# Dossier intermédiaire fixe à côté du code source (usage dev uniquement).
-# Purgé à chaque lancement par main.py.
-_INTERMEDIATE_DIR = Path(__file__).parent.parent / "intermediate"
 
 _SEP = "=" * 55
 
@@ -89,20 +82,6 @@ def _phase_footer(n: int) -> None:
     print(f"{_SEP}")
     print(f"End of Phase {n}")
     print(f"{_SEP}")
-
-
-def _write_phase_csv(
-    pallets: List[Pallet],
-    output_path: str,
-    phase: int,
-    iteration: int = None,
-) -> None:
-    """Écrit un snapshot de phase dans le dossier intermédiaire fixe."""
-    _INTERMEDIATE_DIR.mkdir(parents=True, exist_ok=True)
-    p = Path(output_path)
-    suffix = f"_phase{phase}" + (f"_iter{iteration}" if iteration is not None else "")
-    phase_path = str(_INTERMEDIATE_DIR / (p.stem + suffix + p.suffix))
-    write_results_to_csv(pallets, phase_path)
 
 
 def _next_id(pallets: List[Pallet]) -> int:
@@ -215,7 +194,6 @@ def _renumber_pallets(pallets: List[Pallet]) -> List[Pallet]:
 def optimize_palletization(
     boxes: List[Box],
     parameters: OptimizationParameters,
-    output_path: Optional[str] = None,
 ) -> List[Pallet]:
     """
     Entry point for the palletization optimizer.
@@ -244,8 +222,6 @@ def optimize_palletization(
     _phase_header(1, "Mono-client packing")
     pallets = pack_mono_client(boxes, parameters)
     phase1_pallet_count = len(pallets)
-    if output_path:
-        _write_phase_csv(pallets, output_path, phase=1)
     print(f"  Result : {phase1_pallet_count} pallet(s)")
     _phase_footer(1)
 
@@ -255,8 +231,6 @@ def optimize_palletization(
         pallets = lns_mono_client(pallets, boxes, parameters)
     else:
         print("  Skipped (single pallet or iter_per_pallet=0).")
-    if output_path:
-        _write_phase_csv(pallets, output_path, phase=2)
     print(f"  Result : {len(pallets)} pallet(s)")
     _phase_footer(2)
 
@@ -272,8 +246,6 @@ def optimize_palletization(
         print(f"  Skipped ({reason}).")
         nonlocal pallets
         pallets = _renumber_pallets(pallets)
-        if output_path:
-            _write_phase_csv(pallets, output_path, phase=4)
         _phase_footer(3)
         _phase_header(4, "LNS improvement (multi-client, single pass)")
         print(f"  Skipped ({reason}).")
@@ -322,8 +294,6 @@ def optimize_palletization(
                 pallets, [], box_lookup, parameters, iteration,
                 label=" (2 pallets together)",
             )
-            if output_path:
-                _write_phase_csv(pallets, output_path, phase=3, iteration=iteration)
         else:
             print(f"  2 pallets, avg fill {avg_fill:.1%} ≥ {min_fill:.0%} → no merge.")
 
@@ -348,8 +318,6 @@ def optimize_palletization(
                 label=" (2 least-filled, initial)",
             )
             pallets = well_filled + repack_pool
-            if output_path:
-                _write_phase_csv(pallets, output_path, phase=3, iteration=iteration)
 
             # Feed the least-filled mono into the multi pool while the projected
             # combined average is still below min_filling_ratio AND each merge
@@ -383,9 +351,6 @@ def optimize_palletization(
                     label=f" ({len(mono_to_add)} mono + {len(repack_pool)} repack pool)",
                 )
                 pallets = well_filled + repack_pool
-                if output_path:
-                    _write_phase_csv(pallets, output_path, phase=3,
-                                     iteration=iteration)
 
                 # Improvement check: if the merge didn't actually reduce the
                 # total pallet count, stop — feeding more won't help.
@@ -408,8 +373,6 @@ def optimize_palletization(
             label=" (2 least-filled, initial)",
         )
         pallets = well_filled + repack_pool
-        if output_path:
-            _write_phase_csv(pallets, output_path, phase=3, iteration=iteration)
 
         max_iterations = phase1_pallet_count
         while iteration < max_iterations:
@@ -446,8 +409,6 @@ def optimize_palletization(
                 label=f" ({len(mono_to_add)} mono + {len(repack_pool)} repack pool)",
             )
             pallets = well_filled + repack_pool
-            if output_path:
-                _write_phase_csv(pallets, output_path, phase=3, iteration=iteration)
         else:
             print(f"  Max iterations reached ({max_iterations}). Stopping loop.")
 
@@ -498,8 +459,6 @@ def optimize_palletization(
                 label=f" (2 mono + {len(repack_pool)} repack pool)",
             )
             pallets = remaining + repack_pool
-            if output_path:
-                _write_phase_csv(pallets, output_path, phase=3, iteration=iteration)
         else:
             print(f"  Max iterations reached ({max_iterations}). Stopping loop.")
 
@@ -534,8 +493,6 @@ def optimize_palletization(
     else:
         print(f"  Skipped (pool size {pool_size} ≤ 1 or iter_per_pallet=0).")
     pallets = _renumber_pallets(pallets)
-    if output_path:
-        _write_phase_csv(pallets, output_path, phase=4)
     multi_p4 = sum(1 for p in pallets if p.is_multi_client)
     print(f"  Result : {len(pallets)} pallet(s) ({multi_p4} multi-client)")
     _phase_footer(4)

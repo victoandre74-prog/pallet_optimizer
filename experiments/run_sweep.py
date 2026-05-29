@@ -41,7 +41,6 @@ from heuristics.post_processing import postprocess
 
 # ── Input ─────────────────────────────────────────────────────────────────────
 INPUT_DIR    = os.path.join(_BASE, r"input\tournee_type2026\SL18in")
-OUTPUT_FAKE  = os.path.join(_BASE, r"output\sweep_run_results.csv")
 CSV_OUT      = os.path.join(_DIR, "sweep_results.csv")
 XLSX_OUT     = os.path.join(_DIR, "sweep_results.xlsx")
 
@@ -193,7 +192,7 @@ def _run_pipeline(params: OptimizationParameters) -> tuple[list, str]:
         sys.stdout = buf
         try:
             boxes   = read_boxes_from_csv(csv_file)
-            pallets = optimize_palletization(boxes, params, output_path=OUTPUT_FAKE)
+            pallets = optimize_palletization(boxes, params)
             if params.enable_post_processing:
                 pallets = postprocess(pallets, boxes, params)
             all_pallets.extend(pallets)

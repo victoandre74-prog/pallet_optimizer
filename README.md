@@ -1,6 +1,6 @@
 # Documentation Technique / Read me — Pallet Optimizer
 
-> **Version** : 1.2  
+> **Version** : 1.3  
 > **Date** : Mai 2026  
 > **Langue** : Français
 
@@ -234,7 +234,7 @@ Tous les paramètres sont centralisés dans `config/parameters.py` via la classe
 |---|---|---|---|
 | `pallet_length` | 130.0 | cm | Dimension X de la palette |
 | `pallet_width` | 80.0 | cm | Dimension Y de la palette |
-| `pallet_max_height` | 226.0 | cm | Hauteur maximale d'empilement |
+| `pallet_max_height` | 227.0 | cm | Hauteur maximale d'empilement |
 | `pallet_max_weight` | 600.0 | kg | Charge maximale |
 
 #### Contraintes physiques et stabilité
@@ -257,9 +257,9 @@ Tous les paramètres sont centralisés dans `config/parameters.py` via la classe
 | Paramètre | Défaut | Description |
 |---|---|---|
 | `enable_multi_client` | True | Activer la fusion multi-client (Phases 3 et 4). Mettre à `False` pour conserver toutes les palettes mono-client. |
-| `multi_client_minimum_ratio` | 0.13 | **Seuil d'arrêt doux** pour le régime ≥ 11 palettes : la boucle peut s'arrêter quand multi/total > ce seuil ET que la palette mono la moins remplie est déjà bien remplie. |
-| `multi_client_maximum_ratio` | 0.17 | **Seuil d'arrêt forcé** pour le régime ≥ 11 palettes : arrêt immédiat dès que multi/total > ce seuil, quelles que soient les conditions. |
-| `min_filling_ratio` | 0.35 | Seuil de remplissage moyen pour le régime ≤ 10 palettes. La fusion continue tant que le remplissage projeté reste sous ce seuil. |
+| `multi_client_minimum_ratio` | 0.12 | **Seuil d'arrêt doux** pour le régime ≥ 11 palettes : la boucle peut s'arrêter quand multi/total > ce seuil ET que la palette mono la moins remplie est déjà bien remplie. |
+| `multi_client_maximum_ratio` | 0.20 | **Seuil d'arrêt forcé** pour le régime ≥ 11 palettes : arrêt immédiat dès que multi/total > ce seuil, quelles que soient les conditions. |
+| `min_filling_ratio` | 0.40 | Seuil de remplissage moyen pour le régime ≤ 10 palettes. La fusion continue tant que le remplissage projeté reste sous ce seuil. |
 | `enable_post_processing` | True | Activer la phase 5 (LNS post-traitement + gap repair + centrage) |
 
 > **Condition d'arrêt composée (régime ≥ 11 palettes) :**  
@@ -271,9 +271,9 @@ Tous les paramètres sont centralisés dans `config/parameters.py` via la classe
 
 | Paramètre | Défaut | Description |
 |---|---|---|
-| `lns_mono_time_limit` | 100.0 s | Budget temps |
-| `lns_mono_max_iterations` | 500 | Plafond d'itérations |
-| `lns_mono_small_box_volume` | 408 000 cm³ | Colis en dessous de ce volume extraits des palettes survivantes à chaque itération |
+| `lns_mono_time_per_pallet` | 0.7 s/palette | Budget temps par palette du groupe — total = n_palettes × valeur |
+| `lns_mono_iter_per_pallet` | 30 | Plafond d'itérations par palette du groupe — total = n_palettes × valeur |
+| `lns_mono_small_box_volume` | 590 000 cm³ | Colis en dessous de ce volume extraits des palettes survivantes à chaque itération |
 | `lns_mono_repair_top_k` | 3 | Taille du pool de positions candidates |
 | `lns_mono_random_seed` | 42 | Graine aléatoire (reproductibilité) |
 | `cost_mono_pallet_count` | 500.0 | Poids du nombre de palettes dans la fonction de coût |
@@ -283,9 +283,9 @@ Tous les paramètres sont centralisés dans `config/parameters.py` via la classe
 
 | Paramètre | Défaut | Description |
 |---|---|---|
-| `lns_multi_time_limit` | 40.0 s | Budget temps |
-| `lns_multi_max_iterations` | 300 | Plafond d'itérations |
-| `lns_multi_destroy_ratio` | 0.33 | Fraction des palettes les moins remplies détruites par itération (minimum 2) |
+| `lns_multi_time_per_pallet` | 0.5 s/palette | Budget temps par palette du pool — total = n_palettes × valeur |
+| `lns_multi_iter_per_pallet` | 20 | Plafond d'itérations par palette du pool — total = n_palettes × valeur |
+| `lns_multi_destroy_ratio` | 0.33 | Fraction des palettes les moins remplies détruites par itération (minimum 1) |
 | `lns_multi_repair_top_k` | 3 | Taille du pool de positions candidates |
 | `lns_multi_random_seed` | 42 | Graine aléatoire |
 | `cost_multi_pallet_count` | 10.0 | Poids du nombre de palettes |
@@ -294,8 +294,8 @@ Tous les paramètres sont centralisés dans `config/parameters.py` via la classe
 
 | Paramètre | Défaut | Description |
 |---|---|---|
-| `pp_time_limit` | 20.0 s | Budget temps par groupe |
-| `pp_max_iterations` | 250 | Plafond d'itérations par groupe |
+| `pp_time_per_pallet` | 0.5 s/palette | Budget temps par palette par groupe — total = n_palettes × valeur |
+| `pp_iter_per_pallet` | 20 | Plafond d'itérations par palette par groupe — réparties 50/50 entre la phase fill et la phase P2 |
 | `pp_top_k` | 2 | Taille du pool de placements candidats |
 | `pp_random_seed` | 7 | Graine aléatoire |
 | `pp_w_contact` | 10.0 | Récompense par cm² de contact vertical P2→P1 |
@@ -396,15 +396,19 @@ python main.py --input-dir /chemin/vers/input --output-dir /chemin/vers/output
 
 # Override de paramètres via JSON (ex. désactiver le post-traitement)
 python main.py --params-json '{"enable_post_processing": false}'
+
+# Traitement parallèle (≥ 4 fichiers requis)
+python main.py --max-workers 4
 ```
 
-Les trois arguments supportés par `main.py` sont :
+Les quatre arguments supportés par `main.py` sont :
 
 | Argument | Défaut | Description |
 |---|---|---|
 | `--input-dir` | `input/` | Dossier contenant les CSV d'entrée |
 | `--output-dir` | `output/` | Dossier de sortie |
 | `--params-json` | `{}` | Chaîne JSON d'overrides transmise à `OptimizationParameters(**overrides)` |
+| `--max-workers` | `1` | Nombre de fichiers CSV traités en parallèle (≥ 4 fichiers requis pour activer le mode parallèle) |
 
 #### Visualiser les résultats
 
@@ -598,13 +602,13 @@ La boucle s'arrête si :
 
 **Arrêt forcé (plafond absolu) :**
 ```
-multi_ratio > multi_client_maximum_ratio   (défaut : 0.17)
+multi_ratio > multi_client_maximum_ratio   (défaut : 0.20)
 ```
 
 **Arrêt doux (gain marginal nul) :**
 ```
-multi_ratio > multi_client_minimum_ratio   (défaut : 0.13)
-ET fill(palette mono la moins remplie) > min_filling_ratio  (défaut : 0.35)
+multi_ratio > multi_client_minimum_ratio   (défaut : 0.12)
+ET fill(palette mono la moins remplie) > min_filling_ratio  (défaut : 0.40)
 ```
 
 L'arrêt doux signifie que le seuil minimum est atteint ET que les palettes mono restantes sont déjà bien remplies — les fusionner apporterait peu.
@@ -617,7 +621,7 @@ Après la Phase 3, l'orchestrateur identifie les palettes mono *nouvellement cr�
 
 **Module :** `heuristics/lns_multi.py`
 
-Identique à la Phase 2 mais opère sur les palettes multi-client (et les `extra_mono` identifiés en Phase 3). Le critère de destruction est le ratio `lns_multi_destroy_ratio` (33 % des palettes les moins remplies, minimum 2). Les palettes mono originales intactes sont retournées sans modification.
+Identique à la Phase 2 mais opère sur les palettes multi-client (et les `extra_mono` identifiés en Phase 3). Le critère de destruction est le ratio `lns_multi_destroy_ratio` (33 % des palettes les moins remplies, minimum 1). Les palettes mono originales intactes sont retournées sans modification.
 
 ### 6.6 Phase 5 — Post-traitement
 
@@ -681,13 +685,15 @@ La Phase 6 s'exécute en mémoire, **avant** toute écriture CSV. Le fichier ré
 | Colis manquants | `ERR_SECURITY` | Tous les `box_id` d'entrée sont présents en sortie |
 | Colis supplémentaires | `ERR_SECURITY` | Aucun `box_id` en sortie qui n'existait pas en entrée |
 | Unicité des séquences | `ERR_SECURITY` | Au sein de chaque palette, tous les numéros de séquence (`PlacedBox.sequence`) sont distincts |
+| Immuabilité des champs | `ERR_SECURITY` | Pour chaque colis placé : `client_id`, `priority`, `weight` inchangés ; `orientation` dans la liste `allowed_orientations` ; dimensions placées cohérentes avec `get_oriented_dims(orientation)` |
 
-> **Codes statut dans le log :**  
+> **Codes statut dans le log (marqueur `[BATCH-STATUS]`) :**  
 > `OK` — intégrité vérifiée, résultat écrit.  
-> `ERR_SECURITY` — échec d'un ou plusieurs contrôles, résultat non écrit.  
+> `ERR_SECURITY` — échec d'un ou plusieurs contrôles de Phase 6, résultat non écrit.  
 > `ERR_VALIDATION` — CSV d'entrée invalide (Phase 0).  
 > `ERR_EMPTY_INPUT` — CSV parsé mais aucun colis.  
-> `ERR_EXCEPTION` — exception non gérée.
+> `ERR_EXCEPTION` — exception non gérée.  
+> `ERR_UNKNOWN` — fallback (ne devrait pas se produire en pratique).
 
 ### 6.8 Contraintes de placement
 
@@ -794,7 +800,6 @@ Le suffixe `{ts}` vaut `AAAAMMJJ_HHMMSS` (horodatage d'exécution).
 | `output/{stem}_log_{ts}.txt` | Journal complet d'exécution (copie de la sortie console) |
 | `output/execution_summary_{ts}.txt` | Récapitulatif par lot : OK / ERR_SECURITY / ERR_EXCEPTION par fichier |
 | `output/kpi_report_{ts}.xlsx` | Rapport KPI Excel agrégé (tous fichiers du dossier) — généré en fin de lot |
-| `intermediate/{stem}_phase*.csv` | Snapshots par phase (dossier purgé au début de chaque lot) |
 
 ---
 
@@ -1026,12 +1031,13 @@ docker compose run --rm optimizer \
 | 1.0 | Avril 2026 | Version initiale — 5 phases, interface Dash, dashboard 3 pages |
 | 1.1 | Avril 2026 | Réorganisation modulaire, pipeline Phase 5 en mémoire, CLI `--params-json`, KPI Excel |
 | 1.2 | Mai 2026 | Nouvelle stratégie Phase 3 (régimes 11..70 / >70, condition d'arrêt composée, paramètre `multi_client_maximum_ratio`) ; contrôle d'unicité des séquences en Phase 6 ; correction bug séquences LNS-mono |
+| 1.3 | Mai 2026 | Budgets LNS passés en mode par-palette (`_time_per_pallet`, `_iter_per_pallet`) ; traitement parallèle `--max-workers` ; vérification d'immuabilité des champs en Phase 6 ; ajustement des valeurs par défaut (`pallet_max_height`, ratios multi-client) |
 
 ### 10.3 Problèmes connus et limites
 
 | Problème | Contexte | Contournement |
 |---|---|---|
-| Temps de calcul élevé | > 300 colis P1 avec LNS mono time_limit = 100s | Réduire `lns_mono_time_limit` ou `lns_mono_max_iterations` |
+| Temps de calcul élevé | Beaucoup de colis et/ou valeurs élevées de `lns_mono_time_per_pallet` | Réduire `lns_mono_time_per_pallet` ou `lns_mono_iter_per_pallet` |
 | Colis P2 non placés | Palettes très remplies, z disponible > 160 cm | Vérifier `priority2_max_deposit_height`, ou distribuer différemment les P1 |
 | Port 8050 occupé | Si une instance précédente est encore active | Le système choisit automatiquement un port libre |
 | Export PNG lent | Kaleido crée un sous-processus à la première utilisation | Normal, délai uniquement au premier export |
@@ -1075,8 +1081,8 @@ docker compose run --rm optimizer \
 
 #### Consommation mémoire élevée
 
-**Cause :** Beaucoup de colis et/ou temps LNS long avec nombreuses itérations.  
-**Solution :** Réduire `lns_mono_max_iterations`, `lns_mono_time_limit`, ou `pp_max_iterations`.
+**Cause :** Beaucoup de colis et/ou valeurs élevées des budgets LNS.  
+**Solution :** Réduire par ordre d'impact : `lns_mono_time_per_pallet`, `lns_mono_iter_per_pallet`, `lns_multi_time_per_pallet`, `pp_time_per_pallet`.
 
 #### Résultats différents d'une exécution à l'autre
 
@@ -1098,10 +1104,10 @@ R : Seuls les P1 (meubles) sont soumis à la contrainte mono/multi-client dans l
 R : C'est un **indicateur post-hoc**. La contrainte réelle de stabilité (appliquée pendant le placement) est `stability_ratio` dans les paramètres. Le `worst_stability_ratio` affiché est une analyse après placement.
 
 **Q : Comment accélérer les calculs ?**  
-R : Réduire par ordre d'impact : `lns_mono_time_limit` → `lns_mono_max_iterations` → `lns_multi_time_limit` → `pp_time_limit`.
+R : Réduire par ordre d'impact : `lns_mono_time_per_pallet` → `lns_mono_iter_per_pallet` → `lns_multi_time_per_pallet` → `pp_time_per_pallet`. Pour un lot de plusieurs fichiers, activer le traitement parallèle via `--max-workers` (nécessite ≥ 4 fichiers).
 
 **Q : Quelle est la différence entre `multi_client_minimum_ratio` et `multi_client_maximum_ratio` ?**  
-R : Le minimum (0.13 par défaut) est un seuil *doux* : la boucle peut s'arrêter si ce seuil est dépassé ET que les palettes mono restantes sont déjà bien remplies. Le maximum (0.17 par défaut) est un plafond *forcé* : la boucle s'arrête dès que ce seuil est dépassé, quelles que soient les conditions.
+R : Le minimum (0.12 par défaut) est un seuil *doux* : la boucle peut s'arrêter si ce seuil est dépassé ET que les palettes mono restantes sont déjà bien remplies. Le maximum (0.20 par défaut) est un plafond *forcé* : la boucle s'arrête dès que ce seuil est dépassé, quelles que soient les conditions. La validation des paramètres impose `minimum_ratio < maximum_ratio`.
 
 **Q : L'orientation `all` autorise-t-elle vraiment les 6 rotations pour tous les colis ?**  
 R : Oui, mais la contrainte `stackable` s'applique aussi. Un colis avec `stackable=false` ne peut recevoir aucun autre colis dessus, quelle que soit l'orientation.
@@ -1123,6 +1129,7 @@ R : Oui, mais la contrainte `stackable` s'applique aussi. Un colis avec `stackab
 | 1.0.0 | Avril 2026 | V. André | Version initiale |
 | 1.1.0 | Avril 2026 | V. André | Réorganisation modulaire + pipeline en mémoire |
 | 1.2.0 | Mai 2026 | V. André | Nouvelle stratégie Phase 3 + intégrité Phase 6 + correction LNS-mono |
+| 1.3.0 | Mai 2026 | V. André | Budgets LNS par-palette + parallélisme + immuabilité Phase 6 |
 
 ### 12.2 Résumé des modifications
 
@@ -1148,6 +1155,27 @@ R : Oui, mais la contrainte `stackable` s'applique aussi. Un colis avec `stackab
 - Dashboard 3D réduit à 2 pages (Vue Slots + Vue Zoom)
 - Fichier de log renommé `{stem}_log_{ts}.txt`
 - Ajout de la dépendance `openpyxl>=3.1.0`
+
+**Version 1.3.0 (Mai 2026)**
+
+- **Budgets LNS passés en mode par-palette :**
+  - Les paramètres de budget temps et d'itérations sont désormais exprimés *par palette* et non plus comme des totaux fixes : `lns_mono_time_per_pallet`, `lns_mono_iter_per_pallet`, `lns_multi_time_per_pallet`, `lns_multi_iter_per_pallet`, `pp_time_per_pallet`, `pp_iter_per_pallet`. Le budget total est calculé dynamiquement en multipliant la valeur par le nombre de palettes du groupe ou du pool. Cela rend les performances indépendantes de la taille du lot.
+- **Traitement parallèle — `--max-workers` :**
+  - Nouvel argument CLI `--max-workers N` : traite N fichiers CSV simultanément via `ProcessPoolExecutor`. Nécessite ≥ 4 fichiers (fallback automatique en séquentiel sinon). La sortie de chaque worker est redirigée dans son propre fichier log ; les résultats sont agrégés dans le résumé d'exécution habituel.
+- **Phase 6 — Vérification d'immuabilité des champs :**
+  - Nouveau contrôle : pour chaque colis placé, les champs `client_id`, `priority`, `weight` doivent être identiques à l'entrée ; l'orientation retenue doit figurer dans `allowed_orientations` ; les dimensions placées doivent correspondre à `get_oriented_dims(orientation)`. Code erreur `ERR_SECURITY` si violation.
+- **Ajustement des valeurs par défaut :**
+  - `pallet_max_height` : 226.0 → 227.0 cm
+  - `multi_client_minimum_ratio` : 0.13 → 0.12
+  - `multi_client_maximum_ratio` : 0.17 → 0.20
+  - `min_filling_ratio` : 0.35 → 0.40
+  - `lns_mono_small_box_volume` : 408 000 → 590 000 cm³
+- **Validation croisée des paramètres :**
+  - `__post_init__` de `OptimizationParameters` vérifie désormais que `multi_client_minimum_ratio < multi_client_maximum_ratio` et lève `ValueError` si ce n'est pas le cas.
+- **Suppression de `intermediate/` :**
+  - Le dossier de snapshots par phase n'est plus généré (le pipeline est entièrement en mémoire depuis v1.1).
+
+---
 
 **Version 1.2.0 (Mai 2026)**
 
