@@ -53,20 +53,24 @@ SWEEP_GRID = [
     {"name": "baseline"},
 
     # ── Groupe A : mono — itérations par palette ─────────────────────────────────
-    {"name": "mono_ip3",  "lns_mono_iter_per_pallet": 3},
     {"name": "mono_ip5",  "lns_mono_iter_per_pallet": 5},
     {"name": "mono_ip10", "lns_mono_iter_per_pallet": 10},
     {"name": "mono_ip20", "lns_mono_iter_per_pallet": 20},
+    {"name": "mono_ip30", "lns_mono_iter_per_pallet": 30},
+    {"name": "mono_ip40", "lns_mono_iter_per_pallet": 40},
 
     # ── Groupe B : multi — itérations par palette ─────────────────────────────────
     {"name": "multi_ip5",  "lns_multi_iter_per_pallet":  5},
     {"name": "multi_ip10", "lns_multi_iter_per_pallet": 10},
     {"name": "multi_ip20", "lns_multi_iter_per_pallet": 20},
     {"name": "multi_ip30", "lns_multi_iter_per_pallet": 30},
+    {"name": "multi_ip40", "lns_multi_iter_per_pallet": 40},
 
     # ── Groupe C : post-processing — itérations par palette ──────────────────────
+    {"name": "pp_ip5", "pp_iter_per_pallet": 5},
     {"name": "pp_ip10", "pp_iter_per_pallet": 10},
     {"name": "pp_ip20", "pp_iter_per_pallet": 20},
+    {"name": "pp_ip30", "pp_iter_per_pallet": 30},
     {"name": "pp_ip40", "pp_iter_per_pallet": 40},
 
     # ── Config « slim » candidate — à ajuster après analyse ─────────────────────

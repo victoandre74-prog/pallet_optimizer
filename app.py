@@ -550,7 +550,7 @@ def _build_layout() -> html.Div:
         _details_group("Dimensions de la palette", [
             _param_field("Longueur (cm) — axe X", "p-pallet-length",
                          DEFAULTS["pallet_length"], step=1,
-                         hint="Ex : 130 cm pour une palette standard EUR",
+                         hint="Ex : 120 cm pour une palette standard EUR",
                          min_val=PARAM_BOUNDS["pallet_length"][0], max_val=PARAM_BOUNDS["pallet_length"][1]),
             _param_field("Largeur (cm) — axe Y", "p-pallet-width",
                          DEFAULTS["pallet_width"], step=1,
@@ -658,7 +658,7 @@ def _build_layout() -> html.Div:
         html.Div(_details_group("Paramètres avancés - Post-traitement", [
             _sub_header("Budget"),
             _param_field("Itérations par palette", "p-pp-iter-per-pallet",
-                         DEFAULTS["pp_iter_per_pallet"], step=5,
+                         DEFAULTS["pp_iter_per_pallet"], step=1,
                          hint="Nombre d'itérations allouées par palette. Ex : 30 × 3 pal = 90 iters.",
                          min_val=PARAM_BOUNDS["pp_iter_per_pallet"][0], max_val=PARAM_BOUNDS["pp_iter_per_pallet"][1]),
             _param_field("Graine aléatoire", "p-pp-random-seed",
@@ -788,7 +788,7 @@ def _build_layout() -> html.Div:
                 html.Div(
                     style={"position": "absolute", "width": "100%",
                            "textAlign": "center", "pointerEvents": "none", "left": "0"},
-                    children=[html.H2("Pallet Optimizer — Interface de contrôle",
+                    children=[html.H2("Pallet Optimizer — UI / UX",
                                       style={"color": "#333", "margin": "0"})],
                 ),
                 html.Img(src=_LOGO_U4LOG,
