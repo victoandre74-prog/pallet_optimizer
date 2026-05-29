@@ -19,6 +19,7 @@ import io
 import os
 import sys
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -43,40 +44,53 @@ from heuristics.post_processing import postprocess
 INPUT_DIR    = os.path.join(_BASE, r"input\tournee_type2026\SL18in")
 CSV_OUT      = os.path.join(_DIR, "sweep_results.csv")
 XLSX_OUT     = os.path.join(_DIR, "sweep_results.xlsx")
+N_WORKERS    = 4   # configs tournées en parallèle
 
 # ── Parameter grid ─────────────────────────────────────────────────────────────
 # Each entry overrides only the specified keys; all others keep baseline values.
 # Keys map directly to OptimizationParameters attribute names.
 SWEEP_GRID = [
-    # ── Référence ───────────────────────────────────────────────────────────────
+    # ── Référence ────────────────────────────────────────────────────────────────
     {"name": "baseline"},
 
-    # ── Groupe A : mono — itérations par palette ─────────────────────────────────
-    {"name": "mono_ip5",  "lns_mono_iter_per_pallet": 5},
+    # ── Groupe A : mono — itérations par palette ──────────────────────────────────
+    {"name": "mono_ip5",  "lns_mono_iter_per_pallet":  5},
     {"name": "mono_ip10", "lns_mono_iter_per_pallet": 10},
     {"name": "mono_ip20", "lns_mono_iter_per_pallet": 20},
-    {"name": "mono_ip30", "lns_mono_iter_per_pallet": 30},
     {"name": "mono_ip40", "lns_mono_iter_per_pallet": 40},
+
+    # ── Groupe A2 : mono — temps par palette ──────────────────────────────────────
+    {"name": "mono_tp03", "lns_mono_time_per_pallet": 0.3},
+    {"name": "mono_tp07", "lns_mono_time_per_pallet": 0.7},   # défaut
+    {"name": "mono_tp15", "lns_mono_time_per_pallet": 1.5},
 
     # ── Groupe B : multi — itérations par palette ─────────────────────────────────
     {"name": "multi_ip5",  "lns_multi_iter_per_pallet":  5},
     {"name": "multi_ip10", "lns_multi_iter_per_pallet": 10},
     {"name": "multi_ip20", "lns_multi_iter_per_pallet": 20},
-    {"name": "multi_ip30", "lns_multi_iter_per_pallet": 30},
     {"name": "multi_ip40", "lns_multi_iter_per_pallet": 40},
 
-    # ── Groupe C : post-processing — itérations par palette ──────────────────────
-    {"name": "pp_ip5", "pp_iter_per_pallet": 5},
+    # ── Groupe B2 : multi — temps par palette ─────────────────────────────────────
+    {"name": "multi_tp02", "lns_multi_time_per_pallet": 0.2},
+    {"name": "multi_tp05", "lns_multi_time_per_pallet": 0.5},  # défaut
+    {"name": "multi_tp10", "lns_multi_time_per_pallet": 1.0},
+
+    # ── Groupe C : post-processing — itérations par palette ───────────────────────
+    {"name": "pp_ip5",  "pp_iter_per_pallet":  5},
     {"name": "pp_ip10", "pp_iter_per_pallet": 10},
     {"name": "pp_ip20", "pp_iter_per_pallet": 20},
-    {"name": "pp_ip30", "pp_iter_per_pallet": 30},
     {"name": "pp_ip40", "pp_iter_per_pallet": 40},
+
+    # ── Groupe C2 : post-processing — temps par palette ───────────────────────────
+    {"name": "pp_tp02", "pp_time_per_pallet": 0.2},
+    {"name": "pp_tp05", "pp_time_per_pallet": 0.5},  # défaut
+    {"name": "pp_tp10", "pp_time_per_pallet": 1.0},
 
     # ── Config « slim » candidate — à ajuster après analyse ─────────────────────
     # {"name": "slim_candidate",
-    #  "lns_mono_iter_per_pallet": 5,
-    #  "lns_multi_iter_per_pallet": 10,
-    #  "pp_iter_per_pallet": 20},
+    #  "lns_mono_iter_per_pallet": 10, "lns_mono_time_per_pallet": 0.7,
+    #  "lns_multi_iter_per_pallet": 10, "lns_multi_time_per_pallet": 0.5,
+    #  "pp_iter_per_pallet": 20, "pp_time_per_pallet": 0.5},
 ]
 
 
@@ -207,9 +221,9 @@ def _run_pipeline(params: OptimizationParameters) -> tuple[list, str]:
 
 _FIELDNAMES = [
     "config_name",
-    "lns_mono_iter_per_pallet",
-    "lns_multi_iter_per_pallet",
-    "pp_iter_per_pallet",
+    "lns_mono_time_per_pallet", "lns_mono_iter_per_pallet",
+    "lns_multi_time_per_pallet", "lns_multi_iter_per_pallet",
+    "pp_time_per_pallet", "pp_iter_per_pallet",
     "total_runtime_s", "final_pallets",
     "mono_iters", "mono_improvements", "mono_stagnation", "mono_stag_pct",
     "mono_elapsed_s", "mono_pal_delta",
@@ -295,64 +309,82 @@ def _write_xlsx(rows: list[dict]) -> None:
     print(f"[Sweep] XLSX → {XLSX_OUT}")
 
 
+# ── Worker ────────────────────────────────────────────────────────────────────
+
+def _run_config(cfg: dict) -> dict:
+    """Execute one sweep config in a worker process; returns the result row + captured log."""
+    baseline_params = OptimizationParameters()
+    name   = cfg["name"]
+    params = copy.deepcopy(baseline_params)
+    for key, val in cfg.items():
+        if key == "name":
+            continue
+        if hasattr(params, key):
+            setattr(params, key, val)
+
+    t0 = time.time()
+    try:
+        pallets, log = _run_pipeline(params)
+        total_runtime = round(time.time() - t0, 1)
+        stats = _parse_log(log)
+        stats["final_pallets"] = sum(len(p.boxes) > 0 for p in pallets)
+    except Exception as exc:
+        total_runtime = round(time.time() - t0, 1)
+        log = f"[Sweep] ERROR in {name}: {exc}\n"
+        stats = {k: "ERROR" for k in _FIELDNAMES
+                 if k not in ("config_name", "total_runtime_s")}
+
+    return {
+        "config_name":               name,
+        "lns_mono_time_per_pallet":  params.lns_mono_time_per_pallet,
+        "lns_mono_iter_per_pallet":  params.lns_mono_iter_per_pallet,
+        "lns_multi_time_per_pallet": params.lns_multi_time_per_pallet,
+        "lns_multi_iter_per_pallet": params.lns_multi_iter_per_pallet,
+        "pp_time_per_pallet":        params.pp_time_per_pallet,
+        "pp_iter_per_pallet":        params.pp_iter_per_pallet,
+        "total_runtime_s":           total_runtime,
+        "_log":                      log,
+        **stats,
+    }
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     _csv_files = sorted(glob.glob(os.path.join(INPUT_DIR, "*.csv")))
     print(f"[Sweep] Input dir : {INPUT_DIR}")
     print(f"[Sweep] CSV files : {len(_csv_files)}")
-    print(f"[Sweep] Configs   : {len(SWEEP_GRID)}\n")
+    print(f"[Sweep] Configs   : {len(SWEEP_GRID)}")
+    print(f"[Sweep] Workers   : {N_WORKERS}\n")
 
-    baseline_params = OptimizationParameters()
-    rows = []
+    order = {cfg["name"]: i for i, cfg in enumerate(SWEEP_GRID)}
+    rows  = [None] * len(SWEEP_GRID)
 
-    for cfg in SWEEP_GRID:
-        name = cfg["name"]
-        print(f"\n{'='*60}")
-        print(f"[Sweep] Config: {name}")
-        print(f"{'='*60}")
-
-        params = copy.deepcopy(baseline_params)
-        for key, val in cfg.items():
-            if key == "name":
+    with ProcessPoolExecutor(max_workers=N_WORKERS) as executor:
+        futures = {executor.submit(_run_config, cfg): cfg["name"] for cfg in SWEEP_GRID}
+        for future in as_completed(futures):
+            name = futures[future]
+            try:
+                row = future.result()
+            except Exception as exc:
+                print(f"[Sweep] ✗ {name}: {exc}")
                 continue
-            if hasattr(params, key):
-                setattr(params, key, val)
-            else:
-                print(f"[Sweep] WARNING: unknown parameter '{key}' — skipped.")
 
-        t0 = time.time()
-        try:
-            pallets, log = _run_pipeline(params)
-            total_runtime = round(time.time() - t0, 1)
+            log = row.pop("_log", "")
+            print(f"\n{'='*60}")
+            print(f"[Sweep] Config terminée : {name}")
+            print(f"{'='*60}")
             print(log, end="")
-            stats = _parse_log(log)
-            stats["final_pallets"] = sum(len(p.boxes) > 0 for p in pallets)
+            print(
+                f"[Sweep] ✓ {name:20s}  runtime={row['total_runtime_s']}s  "
+                f"pallets={row.get('final_pallets','?')}  "
+                f"mono_stag={row.get('mono_stag_pct','?')}%  "
+                f"multi_stag={row.get('multi_stag_pct','?')}%"
+            )
+            rows[order[name]] = row
 
-        except Exception as exc:
-            total_runtime = round(time.time() - t0, 1)
-            print(f"[Sweep] ERROR: {exc}")
-            stats = {k: "ERROR" for k in _FIELDNAMES
-                     if k not in ("config_name", "total_runtime_s")}
-
-        row = {
-            "config_name":              name,
-            "lns_mono_iter_per_pallet":  params.lns_mono_iter_per_pallet,
-            "lns_multi_iter_per_pallet": params.lns_multi_iter_per_pallet,
-            "pp_iter_per_pallet":        params.pp_iter_per_pallet,
-            "total_runtime_s":    total_runtime,
-            **stats,
-        }
-        rows.append(row)
-
-        print(
-            f"[Sweep] ✓ {name:20s}  runtime={total_runtime}s  "
-            f"pallets={stats.get('final_pallets','?')}  "
-            f"mono_stag={stats.get('mono_stag_pct','?')}%  "
-            f"multi_stag={stats.get('multi_stag_pct','?')}%"
-        )
-
+    rows = [r for r in rows if r is not None]
     print(f"\n{'='*60}")
-    print(f"[Sweep] All {len(rows)} configs completed.")
+    print(f"[Sweep] {len(rows)}/{len(SWEEP_GRID)} configs terminées.")
     _write_csv(rows)
     _write_xlsx(rows)
