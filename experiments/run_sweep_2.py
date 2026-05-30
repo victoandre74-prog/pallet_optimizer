@@ -6,7 +6,7 @@ Objectifs minimisés simultanément :
     2. multi_client_ratio — n_multi_final / final_pallets  (taux de palettes multi-AR)
 
 Paramètres explorés :
-    multi_client_minimum_ratio  ∈ [0.05, 0.25]   (soft-stop lower bound)
+    multi_client_minimum_ratio  ∈ [0.03, 0.25]   (soft-stop lower bound)
     mc_max_delta                ∈ [0.02, 0.30]   → mc_max = mc_min + delta  (garantit mc_max > mc_min)
     min_filling_ratio           ∈ [0.20, 0.60]   (seuil remplissage régime ≤10 palettes)
 
@@ -52,7 +52,7 @@ XLSX_OUT  = os.path.join(_DIR, "sweep2_results.xlsx")
 
 # Espace de recherche Optuna
 SEARCH_SPACE = {
-    "multi_client_minimum_ratio": (0.05, 0.25),
+    "multi_client_minimum_ratio": (0.03, 0.25),
     "mc_max_delta":               (0.02, 0.30),   # mc_max = mc_min + delta
     "min_filling_ratio":          (0.20, 0.60),
 }
