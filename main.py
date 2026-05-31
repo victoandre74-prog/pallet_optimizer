@@ -605,7 +605,7 @@ def main():
 
     # Generate KPI Excel report from all result CSVs in output_dir
     try:
-        from visualization.kpi_report import generate_excel_report
+        from visualization.view_kpi import generate_excel_report
         excel_path = generate_excel_report(str(output_dir))
         print(f"[Excel] KPI report written to: {excel_path}")
     except Exception as e:

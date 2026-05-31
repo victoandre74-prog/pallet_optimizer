@@ -1,10 +1,9 @@
 """
 app.py — Interface Dash centralisée pour Pallet Optimizer.
 
-Page unique avec trois sections :
+Deux sections :
   1. Paramétrage & Exécution
-  2. Visualisation
-  3. Export
+  2. Visualisation & Export (ouvre le Visualiseur sur port 8053)
 
 Usage :
     python app.py
@@ -14,7 +13,6 @@ import sys
 import os
 import json
 import uuid
-import atexit
 import base64
 import subprocess
 from dataclasses import asdict
@@ -44,44 +42,12 @@ if _DIR not in sys.path:
 
 import dash
 from dash import dcc, html, Input, Output, State, ctx
-import pandas as pd
 
 # ── Global subprocess store ────────────────────────────────────────────────────
-# stdout du subprocess est redirigé vers un fichier log (pas de PIPE).
-# Le parent lit ce fichier toutes les 500ms — aucun overhead inter-processus.
-_runs: dict = {}    # run_id   → {proc: Popen, log_file: str}
-_exports: dict = {} # export_id → {proc: Popen, log_file: str}
+_runs: dict = {}   # run_id → {proc: Popen, output_dir: str, ...}
 
-# Dashboard / Rapport KPI : un seul subprocess vivant à la fois par type
-# (sinon le nouveau bind échoue silencieusement sur le port et l'ancien sert
-# des données périmées).
-_dashboard_proc = None  # subprocess.Popen | None
-_kpi_proc       = None  # subprocess.Popen | None
-
-
-def _kill_if_alive(proc):
-    """Termine un subprocess s'il existe et tourne encore. Silencieux."""
-    if proc is None:
-        return
-    try:
-        if proc.poll() is None:
-            proc.terminate()
-            try:
-                proc.wait(timeout=2)
-            except Exception:
-                proc.kill()
-    except Exception:
-        pass
-
-
-def _cleanup_subprocesses():
-    """Tue dashboard + KPI à la sortie d'app.py pour éviter les processus
-    orphelins qui continuent de servir d'anciennes données sur 8051/8052."""
-    _kill_if_alive(_dashboard_proc)
-    _kill_if_alive(_kpi_proc)
-
-
-atexit.register(_cleanup_subprocesses)
+# True quand l'app tourne dans un container Docker (PALLET_HOST=0.0.0.0).
+_IS_DOCKER = os.environ.get("PALLET_HOST", "127.0.0.1") == "0.0.0.0"
 
 
 # ── Batch-status contract (produced by main.py) ───────────────────────────────
@@ -384,35 +350,6 @@ def _count_csvs(folder: str) -> int:
         return 0
 
 
-def _list_output_csvs(folder: str) -> list[dict]:
-    """
-    Liste les CSV de résultats dans le dossier de sortie.
-    Priorité : postprocessed > results > autres.
-    Retourne une liste d'options pour dcc.Dropdown.
-    """
-    try:
-        p = Path(folder)
-        if not p.is_dir():
-            return []
-        csvs = sorted(p.glob("*_results*.csv"), key=lambda f: f.stat().st_mtime, reverse=True)
-        if not csvs:
-            return []
-        # Trier : postprocessed d'abord
-        post = [f for f in csvs if "postprocessed" in f.name]
-        other = [f for f in csvs if "postprocessed" not in f.name]
-        ordered = post + other
-        return [{"label": f.name, "value": str(f)} for f in ordered]
-    except Exception:
-        return []
-
-
-def _count_pallets(csv_path: str) -> int:
-    """Compte le nombre de palettes uniques dans un CSV de résultats."""
-    try:
-        df = pd.read_csv(csv_path, sep=";", usecols=["pallet_id"])
-        return int(df["pallet_id"].nunique())
-    except Exception:
-        return 0
 
 
 def _count_output_files(folder: str) -> int:
@@ -424,6 +361,8 @@ def _count_output_files(folder: str) -> int:
         return len([f for f in p.iterdir() if f.is_file()])
     except Exception:
         return 0
+
+
 
 
 # ── Composants réutilisables ───────────────────────────────────────────────────
@@ -453,14 +392,18 @@ def _param_field(label: str, input_id: str, value, step=None, hint: str = "",
 
 
 def _folder_row(label: str, path_id: str, browse_id: str, badge_id: str,
-                badge_text: str, hint: str = None) -> html.Div:
+                badge_text: str, hint: str = None,
+                default_path: str = "", browse_disabled: bool = False) -> html.Div:
     """Rangée : étiquette + champ chemin + bouton Browse + badge (+ hint optionnel)."""
     children = [
         html.Label(label, style=S["label"]),
         html.Div([
             dcc.Input(id=path_id, type="text", placeholder="Chemin du dossier...",
+                      value=default_path,
                       style={**S["input"], "flex": "1"}),
-            html.Button("Parcourir", id=browse_id, n_clicks=0, style=S["btn_sm"]),
+            html.Button("Parcourir", id=browse_id, n_clicks=0, style=S["btn_sm"],
+                        disabled=browse_disabled,
+                        title="Non disponible en mode serveur — chemin pré-rempli" if browse_disabled else ""),
         ], style={"display": "flex", "gap": "8px", "alignItems": "center"}),
         html.Div(html.Span(badge_text, id=badge_id, style=S["badge_info"]),
                  style={"marginTop": "6px"}),
@@ -505,11 +448,15 @@ def _build_layout() -> html.Div:
             _folder_row("Dossier d'entrée (input)",
                         "input-dir", "browse-input", "input-badge",
                         "Aucun dossier sélectionné",
-                        hint="Tous les fichiers .csv dans le dossier seront traités l'un après l'autre."),
+                        hint="Tous les fichiers .csv dans le dossier seront traités l'un après l'autre.",
+                        default_path="/app/input" if _IS_DOCKER else "",
+                        browse_disabled=_IS_DOCKER),
             _folder_row("Dossier de sortie (output)",
                         "output-dir", "browse-output", "output-badge",
                         "Aucun dossier sélectionné",
-                        hint="Tous les fichiers de résultats seront stockés dans le dossier."),
+                        hint="Tous les fichiers de résultats seront stockés dans le dossier.",
+                        default_path="/app/output" if _IS_DOCKER else "",
+                        browse_disabled=_IS_DOCKER),
         ], style={**S["row"], "marginBottom": "18px"}),
 
         # Toggles
@@ -731,74 +678,10 @@ def _build_layout() -> html.Div:
 
     ], style=S["card"])
 
-    # ── Section 3 — Visualisation ─────────────────────────────────────────────
-    section2 = html.Div([
-        _section_title("3", "Visualisation"),
-        html.Div([
-            html.Div([
-                html.Label("Fichier de résultats à visualiser", style=S["label"]),
-                dcc.Dropdown(id="viz-file-dropdown", options=[],
-                             placeholder="Sélectionnez un fichier de résultats...",
-                             style={"fontSize": "13px"}, clearable=False),
-            ], style={"flex": "1"}),
-            html.Div([
-                html.Br(),
-                html.Button("🖥  Ouvrir le Dashboard", id="open-dashboard-btn",
-                            n_clicks=0, disabled=True,
-                            style={**S["btn_primary"], "whiteSpace": "nowrap"}),
-            ], style={"display": "flex", "flexDirection": "column", "justifyContent": "flex-end"}),
-        ], style={**S["row"], "alignItems": "flex-end"}),
-        html.Div("", id="viz-status", style={"marginTop": "8px", "fontSize": "13px"}),
-    ], style=S["card"])
-
-    # ── Section 4 — Export ────────────────────────────────────────────────────
-    section3 = html.Div([
-        _section_title("4", "Export Images"),
-        html.Div([
-            html.Div([
-                html.Label("Fichier de résultats à exporter", style=S["label"]),
-                dcc.Dropdown(id="export-file-dropdown", options=[],
-                             placeholder="Sélectionnez un fichier de résultats...",
-                             style={"fontSize": "13px"}, clearable=False),
-                html.Div("", id="export-time-estimate",
-                         style={**S["hint"], "marginTop": "8px", "fontSize": "12px",
-                                "color": "#6b7280"}),
-            ], style={"flex": "1"}),
-            html.Div([
-                html.Br(),
-                html.Button("💾  Exporter les images", id="export-btn",
-                            n_clicks=0, disabled=True,
-                            style={**S["btn_success"], "whiteSpace": "nowrap"}),
-            ], style={"display": "flex", "flexDirection": "column", "justifyContent": "flex-end"}),
-        ], style={**S["row"], "alignItems": "flex-end"}),
-        html.Pre("", id="export-log",
-                 style={**S["log"], "minHeight": "60px", "display": "none"}),
-        html.Div("", id="export-status", style={"marginTop": "8px", "fontSize": "13px"}),
-    ], style=S["card"])
-
-    # ── Section 2 — Rapport KPI ───────────────────────────────────────────────
-    section4 = html.Div([
-        _section_title("2", "Rapport KPI"),
-        html.Div([
-            html.Div([
-                html.Label("Dossier de sortie analysé", style=S["label"]),
-                html.Div(id="kpi-output-dir-display",
-                         style={"fontSize": "13px", "color": "#6b7280",
-                                "fontStyle": "italic", "padding": "6px 0"}),
-            ], style={"flex": "1"}),
-            html.Div([
-                html.Br(),
-                html.Button("📊  Ouvrir le Rapport KPI", id="open-kpi-btn",
-                            n_clicks=0, disabled=True,
-                            style={**S["btn_disabled"], "whiteSpace": "nowrap"}),
-            ], style={"display": "flex", "flexDirection": "column", "justifyContent": "flex-end"}),
-        ], style={**S["row"], "alignItems": "flex-end"}),
-        html.Div("", id="kpi-status", style={"marginTop": "8px", "fontSize": "13px"}),
-    ], style=S["card"])
-
-    # ── Assemblage 2 colonnes ─────────────────────────────────────────────────
+    # ── Section 2 — Visualisation & Export ───────────────────────────────────
+    # ── Assemblage ────────────────────────────────────────────────────────────
     return html.Div([
-        # En-tête — même charte graphique que le dashboard
+        # En-tête
         html.Div(
             style={"display": "flex", "alignItems": "center", "position": "relative",
                    "background": "#f0f4f8", "padding": "6px 24px",
@@ -818,28 +701,11 @@ def _build_layout() -> html.Div:
             ],
         ),
 
-        # Grille 2 colonnes (70 % / 30 %)
-        html.Div([
-            html.Div([section1],
-                     style={"flex": "70", "minWidth": "0"}),
-            html.Div([section4, section2, section3],
-                     style={"flex": "30", "minWidth": "0"}),
-        ], style={**S["content"], "display": "flex", "gap": "20px",
-                  "alignItems": "flex-start"}),
+        html.Div([section1], style=S["content"]),
 
         # Composants invisibles
         dcc.Interval(id="poll-interval", interval=500, n_intervals=0, disabled=True),
-        dcc.Interval(id="export-poll-interval", interval=600, n_intervals=0, disabled=True),
-        # Single-shot timer that re-enables the "Ouvrir le Rapport KPI" button
-        # ~40 s after a click — measured cold-start of the kpi_report.py
-        # subprocess on a large batch (cold Python imports + ~141 CSV parse +
-        # Dash boot + browser tab opening). Prevents accidental double-launches
-        # that would race on port 8052.
-        dcc.Interval(id="kpi-relock-interval", interval=40000, n_intervals=0,
-                     max_intervals=1, disabled=True),
         dcc.Store(id="run-state", data={"active": False, "run_id": None}),
-        dcc.Store(id="export-state", data={"active": False, "export_id": None}),
-        dcc.Store(id="kpi-launching", data=False),
 
     ], style=S["page"])
 
@@ -853,15 +719,15 @@ app = dash.Dash(
 app.layout = _build_layout()
 
 
-# Auto-scroll log-style <pre> boxes (#log-display, #export-log) to the bottom
-# whenever their content is updated, so the latest line is always visible —
-# like a terminal. Uses MutationObserver so no per-update Dash callback needed.
+# Auto-scroll log-style <pre> box (#log-display) to the bottom whenever its
+# content is updated, so the latest line is always visible — like a terminal.
+# Uses MutationObserver so no per-update Dash callback needed.
 app.index_string = app.index_string.replace(
     "<head>",
     "<head>"
     "<script>"
     "(function() {"
-    "  var SEL = '#log-display, #export-log';"
+    "  var SEL = '#log-display';"
     "  function attach() {"
     "    document.querySelectorAll(SEL).forEach(function(el) {"
     "      if (el.dataset.autoScrollAttached) return;"
@@ -880,6 +746,7 @@ app.index_string = app.index_string.replace(
     "})();"
     "</script>"
 )
+
 
 
 # ── Callbacks — Sélection des dossiers ────────────────────────────────────────
@@ -937,78 +804,23 @@ def update_input_badge(folder, run_state):
     return badge_text, badge_style, disabled, btn_style
 
 
-# ── Callback — Badge dossier de sortie + mise à jour des dropdowns ─────────────
+# ── Callback — Badge dossier de sortie ────────────────────────────────────────
 
 @app.callback(
     Output("output-badge", "children"),
     Output("output-badge", "style"),
-    Output("viz-file-dropdown", "options"),
-    Output("viz-file-dropdown", "value"),
-    Output("export-file-dropdown", "options"),
-    Output("export-file-dropdown", "value"),
-    Input("output-dir", "value"),
-    Input("run-state", "data"),
+    Input("output-dir",  "value"),
+    Input("run-state",   "data"),
 )
-def update_output_info(folder, run_state):
-    """Rafraîchit badge + dropdowns à chaque changement de dossier ou fin de run."""
+def update_output_info(folder, _run_state):
     if not folder:
-        no_opts = []
-        return ("Aucun dossier sélectionné", S["badge_info"],
-                no_opts, None, no_opts, None)
+        return "Aucun dossier sélectionné", S["badge_info"]
 
-    n_files = _count_output_files(folder)
+    n_files    = _count_output_files(folder)
     badge_text = f"{n_files} fichier{'s' if n_files != 1 else ''} dans le dossier"
     badge_style = S["badge_ok"] if n_files > 0 else S["badge_warn"]
 
-    opts = _list_output_csvs(folder)
-    default = opts[0]["value"] if opts else None
-
-    return badge_text, badge_style, opts, default, opts, default
-
-
-# ── Callback — Activation boutons viz + export ─────────────────────────────────
-
-@app.callback(
-    Output("open-dashboard-btn", "disabled"),
-    Output("open-dashboard-btn", "style"),
-    Output("export-btn", "disabled"),
-    Output("export-btn", "style"),
-    Input("viz-file-dropdown", "value"),
-    Input("export-file-dropdown", "value"),
-    Input("export-state", "data"),
-)
-def update_action_buttons(viz_file, export_file, export_state):
-    exporting = export_state and export_state.get("active", False)
-
-    viz_has_file = bool(viz_file)
-    dash_disabled = not viz_has_file
-    dash_style = (S["btn_primary"] if viz_has_file
-                  else {**S["btn_disabled"]})
-
-    exp_has_file = bool(export_file)
-    exp_disabled = not exp_has_file or exporting
-    exp_style = ({**S["btn_disabled"]} if exp_disabled else S["btn_success"])
-
-    return dash_disabled, dash_style, exp_disabled, exp_style
-
-
-# ── Callback — Estimation du temps d'export ───────────────────────────────────
-
-@app.callback(
-    Output("export-time-estimate", "children"),
-    Input("export-file-dropdown", "value"),
-)
-def update_export_estimate(csv_path):
-    if not csv_path:
-        return ""
-    n = _count_pallets(csv_path)
-    if n == 0:
-        return "Impossible de lire le fichier sélectionné."
-    secs = n * 5
-    mins = secs // 60
-    rem = secs % 60
-    time_str = f"{mins}m {rem}s" if mins > 0 else f"{rem}s"
-    return f"⏱  Temps estimé : {n} palette{'s' if n > 1 else ''} × 5 s ≈ {time_str}"
+    return badge_text, badge_style
 
 
 # ── Callback — Lancement de l'optimisation ────────────────────────────────────
@@ -1323,189 +1135,6 @@ def poll_run(_, state):
         return new_state, False, "\n".join(lines), badge_text, badge_style
 
 
-# ── Callback — Ouvrir le Dashboard ───────────────────────────────────────────
-
-@app.callback(
-    Output("viz-status", "children"),
-    Input("open-dashboard-btn", "n_clicks"),
-    State("viz-file-dropdown", "value"),
-    prevent_initial_call=True,
-)
-def open_dashboard(n_clicks, csv_path):
-    if not n_clicks or not csv_path:
-        return ""
-    if not os.path.isfile(csv_path):
-        return html.Span("Fichier introuvable.", style=S["badge_err"])
-
-    global _dashboard_proc
-    _kill_if_alive(_dashboard_proc)
-
-    dashboard_script = os.path.join(_DIR, "visualization", "pallet_dashboard.py")
-    _dashboard_proc = subprocess.Popen(
-        [sys.executable, dashboard_script, csv_path],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
-    )
-    return html.Span("Dashboard en cours d'ouverture veuillez patienter..", style=S["badge_ok"])
-
-
-# ── Callback — Dossier de sortie affiché dans section 4 ──────────────────────
-
-@app.callback(
-    Output("kpi-output-dir-display", "children"),
-    Output("open-kpi-btn", "disabled"),
-    Output("open-kpi-btn", "style"),
-    Input("output-dir", "value"),
-    Input("run-state", "data"),
-    Input("kpi-launching", "data"),
-)
-def update_kpi_dir_display(folder, _run_state, launching):
-    """Disabled when:
-       - the output folder is empty / has no CSV  → can't open anything, OR
-       - a KPI subprocess was just launched and is still spinning up
-         (`kpi-launching` flag) → prevents double-clicks racing on port 8052.
-    """
-    has_dir  = bool(folder) and os.path.isdir(folder or "")
-    has_csvs = has_dir and _list_output_csvs(folder)
-    disabled = (not has_csvs) or bool(launching)
-    style = ({**S["btn_disabled"], "whiteSpace": "nowrap"} if disabled
-             else {**S["btn_primary"], "whiteSpace": "nowrap"})
-    return folder or "Aucun dossier sélectionné", disabled, style
-
-
-# ── Callback — Ouvrir le Rapport KPI ─────────────────────────────────────────
-
-@app.callback(
-    Output("kpi-status", "children"),
-    Output("kpi-launching", "data", allow_duplicate=True),
-    Output("kpi-relock-interval", "disabled", allow_duplicate=True),
-    Output("kpi-relock-interval", "n_intervals"),
-    Input("open-kpi-btn", "n_clicks"),
-    State("output-dir", "value"),
-    prevent_initial_call=True,
-)
-def open_kpi_report(n_clicks, output_dir):
-    if not n_clicks:
-        return "", False, True, 0
-    global _kpi_proc
-    _kill_if_alive(_kpi_proc)
-
-    kpi_script = os.path.join(_DIR, "visualization", "kpi_report.py")
-    cmd = [sys.executable, kpi_script]
-    if output_dir and os.path.isdir(output_dir):
-        cmd.append(output_dir)
-    _kpi_proc = subprocess.Popen(
-        cmd,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
-    )
-    # Set launching=True (button gets greyed out via update_kpi_dir_display)
-    # and start the single-shot relock interval (n_intervals reset to 0 so the
-    # interval fires its 1 tick from a fresh state on each click).
-    return (
-        html.Span("Rapport KPI en cours d'ouverture, veuillez patienter…",
-                  style=S["badge_ok"]),
-        True,    # kpi-launching = True
-        False,   # kpi-relock-interval enabled
-        0,       # reset interval tick counter
-    )
-
-
-# ── Callback — Réactivation du bouton après le délai ──────────────────────────
-
-@app.callback(
-    Output("kpi-launching", "data"),
-    Output("kpi-relock-interval", "disabled"),
-    Input("kpi-relock-interval", "n_intervals"),
-    prevent_initial_call=True,
-)
-def _clear_kpi_launching(n_intervals):
-    """Fires once ~8 s after the click, clears the launching flag (which
-    re-enables the button via update_kpi_dir_display) and disables the
-    interval until the next click."""
-    if not n_intervals:
-        raise dash.exceptions.PreventUpdate
-    return False, True
-
-
-# ── Callback — Lancer l'export d'images ───────────────────────────────────────
-
-@app.callback(
-    Output("export-state", "data"),
-    Output("export-poll-interval", "disabled"),
-    Output("export-log", "style"),
-    Output("export-log", "children"),
-    Input("export-btn", "n_clicks"),
-    State("export-file-dropdown", "value"),
-    State("output-dir", "value"),
-    prevent_initial_call=True,
-)
-def launch_export(n_clicks, csv_path, output_dir):
-    if not n_clicks or not csv_path:
-        return dash.no_update, True, {"display": "none"}, ""
-    if not os.path.isfile(csv_path):
-        return dash.no_update, True, {**S["log"], "display": "block"}, "Fichier introuvable."
-
-    # Dossier de sortie des images : {output_dir}/pallet_images/ ou à côté du CSV
-    if output_dir and os.path.isdir(output_dir):
-        img_dir = os.path.join(output_dir, "pallet_images")
-    else:
-        img_dir = os.path.join(os.path.dirname(csv_path), "pallet_images")
-
-    exporter = os.path.join(_DIR, "visualization", "export_pallet_images.py")
-    cmd = [sys.executable, exporter, csv_path, img_dir]
-
-    export_id = str(uuid.uuid4())
-    os.makedirs(img_dir, exist_ok=True)
-    creation_flags = subprocess.CREATE_NEW_CONSOLE if sys.platform == "win32" else 0
-    proc = subprocess.Popen(cmd, creationflags=creation_flags)
-    _exports[export_id] = {"proc": proc}
-
-    new_state = {"active": True, "export_id": export_id}
-    log_style = {**S["log"], "display": "block"}
-    log_msg = f"⟳  Export lancé dans la fenêtre terminal.\n    Suivez la progression dans cette fenêtre.\n    Destination : {img_dir}"
-    return new_state, False, log_style, log_msg
-
-
-# ── Callback — Polling de l'export ───────────────────────────────────────────
-
-@app.callback(
-    Output("export-state", "data", allow_duplicate=True),
-    Output("export-poll-interval", "disabled", allow_duplicate=True),
-    Output("export-log", "children", allow_duplicate=True),
-    Output("export-status", "children"),
-    Input("export-poll-interval", "n_intervals"),
-    State("export-state", "data"),
-    prevent_initial_call=True,
-)
-def poll_export(_, state):
-    if not state or not state.get("active"):
-        return dash.no_update, True, dash.no_update, ""
-
-    export_id = state.get("export_id")
-    if not export_id or export_id not in _exports:
-        return state, True, "Erreur : processus introuvable.", ""
-
-    run = _exports[export_id]
-    proc = run["proc"]
-    done = proc.poll() is not None
-
-    new_state = {**state, "active": not done}
-    running_msg = "⟳  Export lancé dans la fenêtre terminal.\n    Suivez la progression dans cette fenêtre."
-
-    if done:
-        rc = proc.returncode
-        if rc == 0:
-            status = html.Span("✓  Export terminé avec succès.", style=S["badge_ok"])
-            log_msg = "✓  Export terminé avec succès."
-        else:
-            status = html.Span(f"✗  Erreur lors de l'export (code {rc}).", style=S["badge_err"])
-            log_msg = f"✗  Erreur lors de l'export (code {rc})."
-        return new_state, True, log_msg, status
-    else:
-        return new_state, False, running_msg, html.Span("⟳  Export en cours...", style=S["badge_warn"])
 
 
 # ── Callbacks — Grisage conditionnel des groupes de paramètres ───────────────
@@ -1581,30 +1210,17 @@ app.clientside_callback(
     Input("log-display", "children"),
 )
 
-app.clientside_callback(
-    """
-    function(log_text) {
-        var el = document.getElementById('export-log');
-        if (el) { el.scrollTop = el.scrollHeight; }
-        return '';
-    }
-    """,
-    Output("export-log", "data-autoscroll"),
-    Input("export-log", "children"),
-)
-
 
 # ── Point d'entrée ─────────────────────────────────────────────────────────────
 
 def main():
-    import os
     import webbrowser
     from threading import Timer
 
     host = os.environ.get("PALLET_HOST", "127.0.0.1")
     port = int(os.environ.get("PALLET_PORT", "8050"))
+    url  = f"http://{host}:{port}"
 
-    url = f"http://{host}:{port}"
     print(f"\n[App] Interface Pallet Optimizer disponible sur : {url}")
     print("[App] Appuyez sur Ctrl+C pour arrêter.\n")
 
