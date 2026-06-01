@@ -742,8 +742,10 @@ def zoom_layout(state: dict) -> html.Div:
     dropdown_options = state["dropdown_options"]
     pallet_ids       = state["pallet_ids"]
     csv_name         = os.path.basename(state["csv_path"]) if state["csv_path"] else ""
+    # Si une palette a été sélectionnée depuis le KPI, l'utiliser comme valeur initiale
+    initial_pid = state.get("zoom_initial_pid") or (pallet_ids[0] if pallet_ids else None)
     return _zoom_layout(dropdown_options, logo_b64, logo2_b64,
-                        default_pid=pallet_ids[0] if pallet_ids else None,
+                        default_pid=initial_pid,
                         csv_name=csv_name)
 
 

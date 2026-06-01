@@ -692,7 +692,7 @@ def _build_layout() -> html.Div:
                 html.Div(
                     style={"position": "absolute", "width": "100%",
                            "textAlign": "center", "pointerEvents": "none", "left": "0"},
-                    children=[html.H2("Pallet Optimizer — UI / UX",
+                    children=[html.H2("Calculateur de Palettes - UI",
                                       style={"color": "#333", "margin": "0"})],
                 ),
                 html.Img(src=_LOGO_U4LOG,

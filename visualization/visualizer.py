@@ -61,7 +61,9 @@ _state: dict = {
     "dropdown_options": None,
     "n_pages_val":      1,
     "kpi_ready":        False,
-    "kpi_layout":       None,
+    "kpi_rows_by_file": None,   # données brutes (thread background)
+    "kpi_output_dir":   None,   # dossier associé aux données KPI
+    "zoom_initial_pid": None,
 }
 
 _exports: dict = {}
@@ -134,17 +136,34 @@ def _load_csv_into_state(csv_path: str, output_dir: str) -> str:
 
 
 def _start_kpi_build(output_dir: str) -> None:
-    """Démarre le calcul KPI en arrière-plan si le dossier a changé."""
-    if _state.get("output_dir") == output_dir and _state.get("kpi_ready"):
+    """Démarre le calcul KPI (données pures) en arrière-plan.
+
+    Le thread ne construit PAS le layout Dash — il calcule seulement rows_by_file
+    (dict Python pur). Le layout HTML est construit dans le router (thread principal),
+    ce qui évite tout problème de thread-safety avec les composants Dash.
+    """
+    if _state.get("kpi_output_dir") == output_dir and _state.get("kpi_ready"):
         return
-    _state["kpi_ready"]  = False
-    _state["kpi_layout"] = None
+    _state["kpi_ready"]        = False
+    _state["kpi_rows_by_file"] = None
+    _state["kpi_output_dir"]   = output_dir
 
     def _build():
         try:
-            _state["kpi_layout"] = view_kpi.kpi_layout(output_dir)
-            _state["kpi_ready"]  = True
-        except Exception:
+            from visualization.view_kpi import (
+                _load_kpi_cache, _load_all_results, _per_pallet_rows, _save_kpi_cache
+            )
+            from pathlib import Path
+            current_names = {f.name for f in Path(output_dir).glob("*_results_*.csv")}
+            rows = _load_kpi_cache(output_dir, current_names)
+            if rows is None:
+                all_data = _load_all_results(output_dir)
+                rows     = {fname: _per_pallet_rows(df) for fname, df in all_data.items()}
+                _save_kpi_cache(output_dir, rows)
+            _state["kpi_rows_by_file"] = rows
+            _state["kpi_ready"]        = True
+        except Exception as exc:
+            print(f"[KPI] Erreur calcul données : {exc}")
             _state["kpi_ready"] = False
 
     threading.Thread(target=_build, daemon=True).start()
@@ -225,7 +244,7 @@ def _main_layout() -> html.Div:
             html.Div(
                 style={"position": "absolute", "width": "100%",
                        "textAlign": "center", "pointerEvents": "none", "left": "0"},
-                children=[html.H2("Visualiseur Palettes 3D",
+                children=[html.H2("Visualiseur de Palettes - UI",
                                   style={"color": "#333", "margin": "0"})],
             ),
             html.Img(src=_LOGO_U4LOG,
@@ -412,10 +431,14 @@ def build_app() -> dash.Dash:
             return view_palette.grid_layout(_state)
         if p.endswith("/zoom") and _state["df"] is not None:
             return view_palette.zoom_layout(_state)
-        if p.endswith("/kpi") and _state["kpi_ready"]:
-            return _state["kpi_layout"]
-        if p.endswith("/kpi") and _state["df"] is not None:
-            # KPI pas encore prêt — spinner + poll
+        if p.endswith("/kpi") and _state.get("kpi_ready"):
+            # Données prêtes → construire le layout HTML maintenant (thread principal, rapide)
+            return view_kpi.kpi_layout(
+                _state.get("kpi_output_dir", ""),
+                rows_by_file=_state.get("kpi_rows_by_file"),
+            )
+        if p.endswith("/kpi"):
+            # Données pas encore prêtes → spinner + polling
             return html.Div([
                 html.Div(id="kpi-content-area", children=html.Div(
                     style={"padding": "60px", "textAlign": "center", "color": "#6b7280"},
@@ -424,7 +447,7 @@ def build_app() -> dash.Dash:
                         html.H3("Calcul du rapport KPI en cours…",
                                 style={"color": "#1e293b"}),
                         html.P("La page se rafraîchira automatiquement."),
-                    ]
+                    ],
                 )),
                 dcc.Interval(id="kpi-view-poll", interval=600, n_intervals=0),
             ])
@@ -440,7 +463,11 @@ def build_app() -> dash.Dash:
     )
     def poll_kpi_view(n):
         if _state.get("kpi_ready"):
-            return _state["kpi_layout"], True
+            layout = view_kpi.kpi_layout(
+                _state.get("kpi_output_dir", ""),
+                rows_by_file=_state.get("kpi_rows_by_file"),
+            )
+            return layout, True
         return dash.no_update, False
 
     # ── Ouverture d'onglets (clientside) ──────────────────────────────────────
@@ -713,6 +740,37 @@ def build_app() -> dash.Dash:
         def _loading_page():
             return _FlaskResponse(_LOADING_PAGE_HTML,
                                   content_type="text/html; charset=utf-8")
+
+    # ── Routes Flask pour navigation depuis le rapport KPI ────────────────────
+    # Les liens dans le KPI utilisent des URLs relatives (open-grid / open-zoom).
+    # Flask charge le CSV et redirige vers la vue correspondante.
+
+    from flask import request as _flask_req, redirect as _flask_redirect
+    from urllib.parse import unquote as _unquote
+
+    _prefix = os.environ.get("PALLET_VISUALIZER_PREFIX", "").rstrip("/")
+
+    @app.server.route(f"{_prefix}/open-grid" if _prefix else "/open-grid")
+    def _open_grid():
+        csv_path = _unquote(_flask_req.args.get("csv", ""))
+        if csv_path and os.path.isfile(csv_path):
+            _load_csv_into_state(csv_path, os.path.dirname(csv_path))
+        target = f"{_prefix}/grid" if _prefix else "/grid"
+        return _flask_redirect(target)
+
+    @app.server.route(f"{_prefix}/open-zoom" if _prefix else "/open-zoom")
+    def _open_zoom():
+        csv_path = _unquote(_flask_req.args.get("csv", ""))
+        pid_str  = _flask_req.args.get("pid", "")
+        if csv_path and os.path.isfile(csv_path):
+            _load_csv_into_state(csv_path, os.path.dirname(csv_path))
+        if pid_str:
+            try:
+                _state["zoom_initial_pid"] = int(pid_str)
+            except ValueError:
+                pass
+        target = f"{_prefix}/zoom" if _prefix else "/zoom"
+        return _flask_redirect(target)
 
     return app
 

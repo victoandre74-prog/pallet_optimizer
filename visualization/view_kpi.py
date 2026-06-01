@@ -197,8 +197,8 @@ def _build_global_kpis(rows_by_file: dict) -> html.Div:
     p2_per_pal    = total_p2    / total_palettes if total_palettes else 0.0
 
     kpi_style = {"backgroundColor": "white", "borderRadius": "8px",
-                 "padding": "16px 24px", "boxShadow": "0 1px 4px rgba(0,0,0,0.08)",
-                 "textAlign": "center", "minWidth": "130px"}
+                 "padding": "14px 18px", "boxShadow": "0 1px 4px rgba(0,0,0,0.08)",
+                 "textAlign": "center", "minWidth": "110px"}
     lbl = {"fontSize": "12px", "color": "#9ca3af", "marginBottom": "4px"}
     val = lambda c: {"fontSize": "30px", "fontWeight": "bold", "color": c, "lineHeight": "1.1"}
     sub = {"fontSize": "12px", "color": "#6b7280", "marginTop": "4px"}
@@ -210,9 +210,9 @@ def _build_global_kpis(rows_by_file: dict) -> html.Div:
         ("Taux multi",             f"{multi_rate:.1%}",   "#dc2626" if multi_rate > 0 else "#374151", None),
         ("Rempli. vol. moy.",      f"{avg_fill:.1%}",     "#16a34a", None),
         ("Rempli. surf. moy.",     f"{avg_surf:.1%}",     "#0d9488", None),
-        ("Total Articles",         str(total_boxes),      "#374151", f"{boxes_per_pal:.1f} / palette"),
-        ("Total P1 (Meubles)",     str(total_p1),         "#374151", f"{p1_per_pal:.1f} / palette"),
-        ("Total P2 (Colis)",       str(total_p2),         "#ea580c", f"{p2_per_pal:.1f} / palette"),
+        ("Total Articles",         str(total_boxes),      "#374151", f"{boxes_per_pal:.2f} / palette"),
+        ("Total P1 (Meubles)",     str(total_p1),         "#374151", f"{p1_per_pal:.2f} / palette"),
+        ("Total P2 (Colis)",       str(total_p2),         "#ea580c", f"{p2_per_pal:.2f} / palette"),
         ("Ratio P2 / P1",          f"{ratio:.2f}" if ratio != float('inf') else "∞",
                                                            "#dc2626" if ratio > 0.5 else "#16a34a", None),
     ]
@@ -230,10 +230,11 @@ def _build_global_kpis(rows_by_file: dict) -> html.Div:
     )
 
 
-def _build_file_section(filename: str, rows: list) -> html.Details:
+def _build_file_section(filename: str, rows: list, csv_path: str = None) -> html.Details:
     if not rows:
         return html.Details([html.Summary(filename)], style={"marginBottom": "8px"})
 
+    has_links = bool(csv_path)
     n_total = len(rows); n_multi = sum(1 for r in rows if r["multi"])
     avg_fill = sum(r["fill"] for r in rows) / n_total
     avg_surf = sum(r["surf_fill"] for r in rows) / n_total
@@ -271,12 +272,28 @@ def _build_file_section(filename: str, rows: list) -> html.Details:
     ], style={"display": "flex", "gap": "8px", "alignItems": "center",
               "flexShrink": "0", "flexWrap": "nowrap"})
 
+    if has_links:
+        from urllib.parse import quote as _quote
+        _grid_href = f"open-grid?csv={_quote(csv_path, safe='')}"
+        open_btn = html.A(
+            "🖥 Ouvrir Vue ↗",
+            href=_grid_href,
+            target="_blank",
+            style={"background": "#2563eb", "color": "white", "borderRadius": "5px",
+                   "padding": "3px 10px", "fontSize": "12px", "fontWeight": "600",
+                   "cursor": "pointer", "flexShrink": "0", "textDecoration": "none",
+                   "display": "inline-block"},
+        )
+    else:
+        open_btn = html.Span()
+
     summary_content = html.Div([
         html.Span(filename, style={"fontWeight": "600", "fontSize": "15px", "color": "#1e293b",
                                    "flex": "1", "minWidth": "0", "overflow": "hidden",
                                    "textOverflow": "ellipsis", "whiteSpace": "nowrap"}),
+        open_btn,
         chips,
-    ], style={"display": "inline-flex", "alignItems": "center", "gap": "20px",
+    ], style={"display": "inline-flex", "alignItems": "center", "gap": "12px",
               "width": "calc(100% - 28px)", "verticalAlign": "middle", "flexWrap": "nowrap"})
 
     th = {"padding": "8px 10px", "textAlign": "left", "borderBottom": "2px solid #e2e8f0",
@@ -285,14 +302,36 @@ def _build_file_section(filename: str, rows: list) -> html.Details:
     td = {"padding": "6px 10px", "fontSize": "13px", "borderBottom": "1px solid #f1f5f9",
           "whiteSpace": "nowrap"}
 
-    headers = ["Palette", "Client(s)", "Rempli. vol.", "Rempli. surf.", "Poids (kg)",
-               "Colis", "P1", "P2", "Hauteur (cm)", "CdG X (cm)", "CdG Y (cm)",
-               "CdG Z (cm)", "H / Rempli.", "Ratio stabilité"]
+    # Colonne vide en tête si liens actifs (bouton zoom collé au nom de palette)
+    headers = ([""] if has_links else []) + [
+        "Palette", "Client(s)", "Rempli. vol.", "Rempli. surf.", "Poids (kg)",
+        "Colis", "P1", "P2", "Hauteur (cm)", "CdG X (cm)", "CdG Y (cm)",
+        "CdG Z (cm)", "H / Rempli.", "Ratio stabilité",
+    ]
+
+    _td_btn = {"padding": "4px 6px", "borderBottom": "1px solid #f1f5f9", "whiteSpace": "nowrap"}
 
     table_rows = []
     for i, r in enumerate(rows):
         bg = "#fff8f8" if r["multi"] else ("white" if i % 2 == 0 else "#f9fafb")
-        table_rows.append(html.Tr(style={"backgroundColor": bg}, children=[
+
+        if has_links:
+            from urllib.parse import quote as _quote
+            _zoom_href = f"open-zoom?csv={_quote(csv_path, safe='')}&pid={r['pid']}"
+            zoom_cell = html.Td(
+                html.A("🔍", href=_zoom_href, target="_blank",
+                       title=f"Ouvrir Palette {r['pid']} en Vue Zoom",
+                       style={"background": "#0891b2", "color": "white",
+                              "borderRadius": "4px", "padding": "2px 7px",
+                              "fontSize": "12px", "cursor": "pointer",
+                              "textDecoration": "none", "display": "inline-block"}),
+                style=_td_btn,
+            )
+            first_cells = [zoom_cell]
+        else:
+            first_cells = []
+
+        cells = first_cells + [
             html.Td(f"Palette {r['pid']}", style={**td, "fontWeight": "600"}),
             html.Td("Multi" if r["multi"] else str(r["clients"][0]), style=td),
             html.Td(f"{r['fill']:.1%}", style={**td,
@@ -309,7 +348,8 @@ def _build_file_section(filename: str, rows: list) -> html.Details:
             html.Td(f"{(r['height'] / r['fill']):.0f}" if r['fill'] > 0 else "—", style=td),
             html.Td(f"{r['stability']:.2f}", style={**td,
                 "color": "#dc2626" if r["stability"] > 5.0 else "#f59e0b" if r["stability"] > 3.0 else "#16a34a"}),
-        ]))
+        ]
+        table_rows.append(html.Tr(style={"backgroundColor": bg}, children=cells))
 
     table = html.Table(style={"width": "100%", "borderCollapse": "collapse"},
                        children=[html.Thead(html.Tr([html.Th(h, style=th) for h in headers])),
@@ -328,18 +368,18 @@ def _build_file_section(filename: str, rows: list) -> html.Details:
     )
 
 
-def build_kpi_layout(output_dir: str, logo_b64: str, logo2_b64: str) -> html.Div:
-    # Liste des fichiers CSV (rapide — pas de lecture)
-    current_names = {f.name for f in Path(output_dir).glob("*_results_*.csv")}
-
-    # Cache JSON écrit par generate_excel_report() → évite de relire tous les CSV
-    rows_by_file = _load_kpi_cache(output_dir, current_names)
+def build_kpi_layout(output_dir: str, logo_b64: str, logo2_b64: str,
+                     rows_by_file: dict = None) -> html.Div:
     if rows_by_file is None:
-        all_data     = _load_all_results(output_dir)
-        rows_by_file = {fname: _per_pallet_rows(df) for fname, df in all_data.items()}
-        _save_kpi_cache(output_dir, rows_by_file)  # reconstitue le cache manquant/périmé
-    else:
-        all_data = {fname: None for fname in rows_by_file}  # noms seulement
+        # Données non fournies : charger depuis cache ou recalculer
+        current_names = {f.name for f in Path(output_dir).glob("*_results_*.csv")}
+        rows_by_file  = _load_kpi_cache(output_dir, current_names)
+        if rows_by_file is None:
+            all_data     = _load_all_results(output_dir)
+            rows_by_file = {fname: _per_pallet_rows(df) for fname, df in all_data.items()}
+            _save_kpi_cache(output_dir, rows_by_file)
+    # all_data sert uniquement pour len() et l'itération des noms
+    all_data = {fname: None for fname in rows_by_file}
 
     header_children = [
         html.Img(src=logo_b64, style={"height": "68px", "objectFit": "contain"}) if logo_b64 else html.Div(),
@@ -356,7 +396,9 @@ def build_kpi_layout(output_dir: str, logo_b64: str, logo2_b64: str) -> html.Div
 
     n_files = len(all_data)
     file_sections = (
-        [_build_file_section(fname, rows_by_file[fname]) for fname in all_data]
+        [_build_file_section(fname, rows_by_file[fname],
+                             csv_path=os.path.join(output_dir, fname))
+         for fname in all_data]
         if all_data else
         [html.Div("Aucun fichier *_results_*.csv trouvé dans le dossier de sortie.",
                   style={"color": "#9ca3af", "padding": "20px", "textAlign": "center",
@@ -616,13 +658,14 @@ if __name__ == "__main__":
 
 # ── Integrated mode (used by visualizer.py) ───────────────────────────────────
 
-def kpi_layout(output_dir: str) -> html.Div:
-    """Retourne le layout KPI pour le dossier output donné."""
+def kpi_layout(output_dir: str, rows_by_file: dict = None) -> html.Div:
+    """Retourne le layout KPI. Si rows_by_file est fourni, saute le rechargement CSV."""
     logo_b64  = _load_logo("logo_fournier.png")
     logo2_b64 = _load_logo("logo_u4log.jpg")
-    return build_kpi_layout(output_dir, logo_b64, logo2_b64)
+    return build_kpi_layout(output_dir, logo_b64, logo2_b64, rows_by_file=rows_by_file)
 
 
 def register(app: dash.Dash, state: dict) -> None:
-    """Le rapport KPI est un layout statique — pas de callbacks interactifs."""
+    """Les liens KPI → Vue utilisent des routes Flask directes (open-grid / open-zoom).
+    Aucun callback Dash n'est nécessaire ici."""
     pass
