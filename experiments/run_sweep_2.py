@@ -45,10 +45,15 @@ from file_io.csv_reader import read_boxes_from_csv
 from optimizer.pallet_optimizer import optimize_palletization
 from heuristics.post_processing import postprocess
 
+from datetime import datetime
+
+# Timestamp pour nommage des fichiers de résultats
+ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+
 # ── Config ─────────────────────────────────────────────────────────────────────
-INPUT_DIR = os.path.join(_BASE, r"input\tournee_type2026\SL18in")
-CSV_OUT   = os.path.join(_DIR, "sweep2_results.csv")
-XLSX_OUT  = os.path.join(_DIR, "sweep2_results.xlsx")
+INPUT_DIR = os.path.join(_BASE, r"input\SL18in")
+CSV_OUT   = os.path.join(_DIR, f"sweep2_results_sl18_{ts}.csv")
+XLSX_OUT  = os.path.join(_DIR, f"sweep2_results_sl18_{ts}.xlsx")
 
 # Espace de recherche Optuna
 SEARCH_SPACE = {

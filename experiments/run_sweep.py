@@ -41,7 +41,7 @@ from optimizer.pallet_optimizer import optimize_palletization
 from heuristics.post_processing import postprocess
 
 # ── Input ─────────────────────────────────────────────────────────────────────
-INPUT_DIR    = os.path.join(_BASE, r"input\tournee_type2026\SL18in")
+INPUT_DIR    = os.path.join(_BASE, r"input\SL18in")
 CSV_OUT      = os.path.join(_DIR, "sweep_results.csv")
 XLSX_OUT     = os.path.join(_DIR, "sweep_results.xlsx")
 N_WORKERS    = 4   # configs tournées en parallèle

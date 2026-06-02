@@ -9,7 +9,8 @@ from matplotlib.colors import Normalize
 import os
 
 _DIR = os.path.dirname(os.path.abspath(__file__))
-CSV_PATH = os.path.join(_DIR, "sweep2_results.csv")
+CSV_PATH = os.path.join(_DIR, "sweep2_results_sl18.csv")
+CSV_NAME = os.path.basename(CSV_PATH)
 
 with open(CSV_PATH, encoding="utf-8") as f:
     raw = list(csv.DictReader(f))
@@ -56,7 +57,7 @@ ax.annotate(
 ax.set_xlabel("Palettes totales", fontsize=11)
 ax.set_ylabel("Taux multi-AR (%)", fontsize=11)
 ax.set_title(
-    "Front de Pareto  —  palettes vs taux multi-AR\n(200 essais NSGA-II, PP off)",
+    f"Front de Pareto  —  palettes vs taux multi-AR\n(200 essais NSGA-II, PP off) {CSV_NAME}",
     fontsize=12,
 )
 ax.legend(fontsize=10)
