@@ -135,6 +135,7 @@ class _Tee:
 # ── Imports du pipeline (après la config du path) ──────────────────────────────
 from file_io.csv_reader import read_boxes_from_csv, validate_csv
 from file_io.csv_writer import write_results_to_csv
+from file_io.kpi_writer import compute_kpi_rows
 from optimizer.pallet_optimizer import optimize_palletization
 from heuristics.post_processing import postprocess
 
@@ -297,7 +298,7 @@ def _process_one(
             print(f"\n[Abandonné] Corrigez le fichier d'entrée et relancez.")
             status_code   = "ERR_VALIDATION"
             status_detail = f"{len(errors)} erreur(s) de validation"
-            return False, status_code, status_detail
+            return False, status_code, status_detail, [], None
 
         boxes = read_boxes_from_csv(str(input_path))
         if not boxes:
@@ -305,7 +306,7 @@ def _process_one(
             _phase_footer(0)
             status_code   = "ERR_EMPTY_INPUT"
             status_detail = "aucune boîte chargée depuis le CSV"
-            return False, status_code, status_detail
+            return False, status_code, status_detail, [], None
 
         unique_clients = len({b.client_id for b in boxes})
         print(f"  Boîtes  : {len(boxes)}")
@@ -451,9 +452,11 @@ def _process_one(
         _phase_footer(6)
 
         # ── Écriture du CSV résultats — seulement si la phase 6 est OK ─────────
+        kpi_rows = []
         if check_ok:
             write_results_to_csv(pallets, str(results_path))
             print(f"  Résultat sauvegardé : {results_path}")
+            kpi_rows = compute_kpi_rows(pallets)
         else:
             print(f"  Résultat NON écrit ({results_path.name}) — vérification d'intégrité échouée.")
 
@@ -469,7 +472,7 @@ def _process_one(
         else:
             status_code   = "ERR_SECURITY"
             status_detail = security_reason
-        return check_ok, status_code, status_detail
+        return check_ok, status_code, status_detail, kpi_rows, (results_path.name if check_ok else None)
 
     except Exception as e:
         # Capture toutes les exceptions non gérées (bug dans le pipeline)
@@ -481,7 +484,7 @@ def _process_one(
         print(f"\n[Abandonné] Traitement de {input_path.name} échoué.")
         status_code   = "ERR_EXCEPTION"
         status_detail = (str(e) or type(e).__name__)[:200]
-        return False, status_code, status_detail
+        return False, status_code, status_detail, [], None
 
     finally:
         # Le bloc finally s'exécute toujours, même en cas d'exception.
@@ -566,6 +569,59 @@ def _write_execution_summary(
     return summary_path
 
 
+def _write_manifest(output_dir: Path, results: list) -> None:
+    """
+    Met à jour output_dir/manifest.json avec les runs réussis de la session.
+
+    Le manifest est lu par le visualizer Three.js pour lister les résultats
+    disponibles sans scanner le dossier. Les entrées existantes sont conservées ;
+    les nouvelles remplacent les éventuels doublons (même csv_name).
+    """
+    import json
+    from datetime import datetime, timezone
+
+    manifest_path = output_dir / "manifest.json"
+
+    try:
+        if manifest_path.exists():
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+        else:
+            manifest = {"schema_version": 1, "runs": []}
+    except Exception:
+        manifest = {"schema_version": 1, "runs": []}
+
+    existing = {r["results_file"]: r for r in manifest.get("runs", []) if "results_file" in r}
+
+    for result in results:
+        if result["status_code"] != "OK" or not result.get("csv_name"):
+            continue
+        kpi_rows     = result.get("kpi_rows", [])
+        pallet_count = len(kpi_rows)
+        box_count    = sum(r["n_boxes"] for r in kpi_rows)
+        avg_fill     = (round(sum(r["fill"] for r in kpi_rows) / pallet_count, 4)
+                        if pallet_count else 0.0)
+        existing[result["csv_name"]] = {
+            "stem":           result["stem"],
+            "results_file":   result["csv_name"],
+            "timestamp":      datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "status":         "OK",
+            "pallet_count":   pallet_count,
+            "box_count":      box_count,
+            "avg_fill_ratio": avg_fill,
+        }
+
+    manifest["last_updated"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    manifest["runs"]         = list(existing.values())
+
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, ensure_ascii=False, indent=2)
+
+    n_new = sum(1 for r in results if r["status_code"] == "OK" and r.get("csv_name"))
+    print(f"[Manifest] manifest.json mis à jour ({n_new} nouveau(x) run(s), "
+          f"{len(manifest['runs'])} total).")
+
+
 def main():
     """
     Fonction principale : parse les arguments, collecte les fichiers d'entrée,
@@ -617,7 +673,9 @@ def main():
         # ── Mode séquentiel ───────────────────────────────────────────────────
         for i, input_path in enumerate(input_files, start=1):
             print(f"\n[Batch] [{i}/{len(input_files)}] Traitement : {input_path.name}")
-            ok, status_code, status_detail = _process_one(input_path, output_dir, params)
+            ok, status_code, status_detail, kpi_rows, csv_name = _process_one(
+                input_path, output_dir, params
+            )
             if not ok:
                 failed += 1
             results.append({
@@ -625,6 +683,8 @@ def main():
                 "stem":          input_path.stem,
                 "status_code":   status_code,
                 "status_detail": status_detail,
+                "kpi_rows":      kpi_rows,
+                "csv_name":      csv_name,
             })
     else:
         # ── Mode parallèle avec ProcessPoolExecutor ───────────────────────────
@@ -642,9 +702,11 @@ def main():
                 path      = future_to_path[future]
                 completed += 1
                 try:
-                    ok, status_code, status_detail = future.result()
+                    ok, status_code, status_detail, kpi_rows, csv_name = future.result()
                 except Exception as e:
-                    ok, status_code, status_detail = False, "ERR_EXCEPTION", str(e)
+                    ok, status_code, status_detail, kpi_rows, csv_name = (
+                        False, "ERR_EXCEPTION", str(e), [], None
+                    )
                 print(f"[Batch] [{completed}/{len(input_files)}] Terminé : {path.name} → {status_code}")
                 if not ok:
                     failed += 1
@@ -653,6 +715,8 @@ def main():
                     "stem":          path.stem,
                     "status_code":   status_code,
                     "status_detail": status_detail,
+                    "kpi_rows":      kpi_rows,
+                    "csv_name":      csv_name,
                 })
 
     print(f"\n[Batch] {len(input_files)} fichier(s) traités — {failed} échec(s).")
@@ -668,13 +732,25 @@ def main():
     except Exception as e:
         print(f"[Résumé] Avertissement : impossible d'écrire le résumé : {e}")
 
-    # ── Génération du rapport KPI Excel ──────────────────────────────────────
+    # ── Cache KPI JSON + rapport Excel ────────────────────────────────────────
+    new_kpi = {r["csv_name"]: r["kpi_rows"] for r in results if r.get("csv_name")}
+    if new_kpi:
+        try:
+            from file_io.kpi_writer import load_kpi_cache, save_kpi_cache, write_excel
+            cache = load_kpi_cache(output_dir)
+            cache.update(new_kpi)
+            save_kpi_cache(cache, output_dir)
+            excel_path = write_excel(cache, output_dir)
+            if excel_path:
+                print(f"[Excel] Rapport KPI écrit dans : {excel_path}")
+        except Exception as e:
+            print(f"[Excel] Avertissement : {e}")
+
+    # ── Manifest JSON (pour le futur visualizer Three.js) ─────────────────────
     try:
-        from visualization.view_kpi import generate_excel_report
-        excel_path = generate_excel_report(str(output_dir))
-        print(f"[Excel] Rapport KPI écrit dans : {excel_path}")
+        _write_manifest(output_dir, results)
     except Exception as e:
-        print(f"[Excel] Avertissement : impossible de générer le rapport KPI : {e}")
+        print(f"[Manifest] Avertissement : {e}")
 
     # Retourne un code de sortie non nul si au moins un fichier a échoué.
     # Utile pour les scripts d'automatisation (bash if, CI/CD, etc.).
