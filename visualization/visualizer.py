@@ -281,7 +281,7 @@ def _main_layout() -> html.Div:
     )
 
     # ── Slot 1 : Vue Multiple ─────────────────────────────────────────────────
-    slot_grid = _slot_card("slot-grid", "🖥", "Vue Multiple", [
+    slot_grid = _slot_card("slot-grid", "🖥", "Vue Grille", [
         html.Div([
             html.Label("Fichier de résultats", style=_S["label"]),
             dcc.Dropdown(id="csv-grid", options=[], clearable=False,
@@ -406,7 +406,7 @@ def build_app() -> dash.Dash:
         """function(pathname) {
             var p = (pathname || '/').replace(/\\/$/, '') || '/';
             var titles = {
-                '/grid': 'Vue Multiple Palettes',
+                '/grid': 'Vue Grid Palettes',
                 '/zoom': 'Vue Zoom Palette',
                 '/kpi':  'Rapport KPI'
             };

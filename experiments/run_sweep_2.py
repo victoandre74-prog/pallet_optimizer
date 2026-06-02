@@ -6,9 +6,9 @@ Objectifs minimisés simultanément :
     2. multi_client_ratio — n_multi_final / final_pallets  (taux de palettes multi-AR)
 
 Paramètres explorés :
-    multi_client_minimum_ratio  ∈ [0.03, 0.25]   (soft-stop lower bound)
-    mc_max_delta                ∈ [0.02, 0.30]   → mc_max = mc_min + delta  (garantit mc_max > mc_min)
-    min_filling_ratio           ∈ [0.20, 0.60]   (seuil remplissage régime ≤10 palettes)
+    multi_client_minimum_ratio  ∈ [0.02, 0.23]   (soft-stop lower bound)
+    mc_max_delta                ∈ [0.01, 0.25]   → mc_max = mc_min + delta  (garantit mc_max > mc_min)
+    min_filling_ratio           ∈ [0.20, 0.55]   (seuil remplissage régime ≤10 palettes)
 
 Usage :
     python run_sweep_2.py [--trials 80] [--workers 4] [--seed 42]
@@ -52,9 +52,9 @@ XLSX_OUT  = os.path.join(_DIR, "sweep2_results.xlsx")
 
 # Espace de recherche Optuna
 SEARCH_SPACE = {
-    "multi_client_minimum_ratio": (0.03, 0.25),
-    "mc_max_delta":               (0.02, 0.30),   # mc_max = mc_min + delta
-    "min_filling_ratio":          (0.20, 0.60),
+    "multi_client_minimum_ratio": (0.02, 0.23),
+    "mc_max_delta":               (0.01, 0.25),   # mc_max = mc_min + delta
+    "min_filling_ratio":          (0.20, 0.55),
 }
 
 # ── Log parsing ────────────────────────────────────────────────────────────────
@@ -81,8 +81,6 @@ _RE_PP_P2_DONE_OK = re.compile(
     r" \((?P<skipped>\d+) skipped\) in (?P<elapsed>[\d.]+)s"
     r" \| stagnation: (?P<stagnation>\d+) iters \((?P<stag_pct>[\d.]+)%\)"
 )
-_RE_PP_LOADED   = re.compile(r"Loaded \d+ pallets\s+\((\d+) multi-client")
-_RE_MULTI_FINAL = re.compile(r"Multi-client\s*:\s*(\d+)")
 
 
 def _parse_log(log: str) -> dict:
@@ -143,10 +141,6 @@ def _parse_log(log: str) -> dict:
     stats["pp_p2_stagnation"]   = p2_stagnation
     stats["pp_p2_elapsed_s"]    = round(p2_elapsed, 1)
 
-    stats["n_multi_loaded"] = sum(int(m.group(1)) for m in _RE_PP_LOADED.finditer(log))
-    multi_final_matches = _RE_MULTI_FINAL.findall(log)
-    stats["n_multi_final"] = sum(int(v) for v in multi_final_matches) if multi_final_matches else 0
-
     return stats
 
 
@@ -186,17 +180,21 @@ def _run_trial_worker(
     params.multi_client_minimum_ratio = mc_min
     params.multi_client_maximum_ratio = mc_max
     params.min_filling_ratio          = fill
+    params.enable_post_processing     = False
 
     t0 = time.time()
     try:
         pallets, log = _run_pipeline(params)
         runtime = round(time.time() - t0, 1)
         stats   = _parse_log(log)
-        n_pal   = sum(len(p.boxes) > 0 for p in pallets)
+        active  = [p for p in pallets if len(p.boxes) > 0]
+        n_pal   = len(active)
+        n_multi = sum(1 for p in active if p.is_multi_client)
+        n_mono  = n_pal - n_multi
         stats["final_pallets"]      = n_pal
-        stats["multi_client_ratio"] = round(
-            stats["n_multi_final"] / max(1, n_pal), 4
-        )
+        stats["n_multi"]            = n_multi
+        stats["n_mono"]             = n_mono
+        stats["multi_client_ratio"] = round(n_multi / max(1, n_pal), 4)
         error = None
     except Exception as exc:
         runtime = round(time.time() - t0, 1)
@@ -219,8 +217,7 @@ def _run_trial_worker(
 _FIELDNAMES = [
     "trial_number", "pareto",
     "multi_client_minimum_ratio", "multi_client_maximum_ratio", "min_filling_ratio",
-    "total_runtime_s", "final_pallets", "multi_client_ratio",
-    "n_multi_loaded", "n_multi_final",
+    "total_runtime_s", "final_pallets", "n_multi", "n_mono", "multi_client_ratio",
     "mono_iters", "mono_improvements", "mono_stagnation", "mono_stag_pct",
     "mono_elapsed_s", "mono_pal_delta",
     "multi_iters", "multi_improvements", "multi_stagnation", "multi_stag_pct",
@@ -230,7 +227,7 @@ _FIELDNAMES = [
 ]
 
 _SECTIONS = [
-    ("Config",       10),   # trial + pareto + 3 params + runtime + pallets + ratio + 2 multi counts
+    ("Config",       10),   # trial + pareto + 3 params + runtime + total + n_multi + n_mono + ratio
     ("LNS Mono",      6),
     ("LNS Multi",     6),
     ("PP Fill",       3),

@@ -314,7 +314,7 @@ def _dashboard_layout(pallet_ids, dropdown_options, n_pages, logo_b64, logo2_b64
         style={"fontFamily": "Arial, sans-serif", "backgroundColor": "#f5f5f5",
                "minHeight": "100vh", "padding": "16px"},
         children=[
-            _header_div("Vue Slots Palettes", logo_b64, logo2_b64),
+            _header_div("Vue Grille", logo_b64, logo2_b64),
             html.P(csv_name, style={"textAlign": "center", "color": "#888",
                                     "marginTop": "0", "marginBottom": "12px", "fontSize": "13px"}),
             pagination,
@@ -378,7 +378,7 @@ def _zoom_layout(dropdown_options, logo_b64, logo2_b64="", default_pid=None, csv
         style={"fontFamily": "Arial, sans-serif", "backgroundColor": "#f5f5f5",
                "minHeight": "100vh", "padding": "16px"},
         children=[
-            _header_div("Vue Zoom Palette", logo_b64, logo2_b64),
+            _header_div("Vue Zoom", logo_b64, logo2_b64),
             html.P(csv_name, style={"textAlign": "center", "color": "#888",
                                     "marginTop": "0", "marginBottom": "12px", "fontSize": "13px"}),
             html.Div(
@@ -666,7 +666,7 @@ def build_app(df: pd.DataFrame, csv_path: str = "") -> dash.Dash:
 
     app.clientside_callback(
         """function(pathname) {
-            var titles = {'/': 'Vue Slots Palettes', '/zoom': 'Vue Zoom Palette'};
+            var titles = {'/': 'Vue Grille', '/zoom': 'Vue Zoom'};
             document.title = titles[pathname] || 'Vue Slots Palettes';
             return '';
         }""",

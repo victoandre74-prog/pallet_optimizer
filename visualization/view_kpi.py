@@ -276,7 +276,7 @@ def _build_file_section(filename: str, rows: list, csv_path: str = None) -> html
         from urllib.parse import quote as _quote
         _grid_href = f"open-grid?csv={_quote(csv_path, safe='')}"
         open_btn = html.A(
-            "🖥 Ouvrir Vue ↗",
+            "🖥 Ouvrir ↗",
             href=_grid_href,
             target="_blank",
             style={"background": "#2563eb", "color": "white", "borderRadius": "5px",
