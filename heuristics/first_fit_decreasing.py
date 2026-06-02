@@ -1,17 +1,30 @@
 """
-First Fit Decreasing (FFD) heuristic for 3-D palletization.
+Algorithme First Fit Decreasing (FFD) pour la palettisation 3D.
 
-Algorithm:
-    For each box (sorted large-to-small):
-        1. Try each existing pallet in order.
-        2. Place the box on the FIRST pallet that accepts it (true First Fit).
-           Within that pallet, the best position is chosen by the placement
-           engine (lowest z, leftmost x, most-back y).
-        3. If no existing pallet accepts the box, open a new pallet.
+Qu'est-ce que FFD ?
+    FFD est un algorithme glouton (greedy) classique du problème de bin packing.
+    « First Fit » = on place chaque boîte sur la PREMIÈRE palette qui l'accepte.
+    « Decreasing » = les boîtes sont triées par taille décroissante avant.
 
-The function is deliberately kept generic so it can be called:
-    - In Phase 1 with a single-client box list (mono-client mode)
-    - In Phase 2 with a mixed box list (repack mode)
+Algorithme simplifié :
+    Pour chaque boîte (dans l'ordre trié grande → petite) :
+        1. Essaie chaque palette existante dans l'ordre.
+        2. Si la palette accepte la boîte (position valide trouvée) :
+               → Place la boîte et passe à la suivante.
+        3. Si aucune palette ne convient :
+               → Ouvre une nouvelle palette vide et y place la boîte.
+
+Pourquoi les grandes boîtes en premier ?
+    Les grandes boîtes sont les plus difficiles à placer car elles ont moins de
+    positions valides. En les plaçant tôt (palettes encore vides), elles trouvent
+    toujours de la place. Les petites boîtes remplissent ensuite les espaces
+    résiduels comme des « bouchons ».
+
+Versatilité :
+    Cette fonction est appelée dans deux contextes :
+    - Phase 1 : liste mono-client (une seule entreprise par appel)
+    - Phase 3 (repacking) : liste multi-client pour remplir des espaces libres
+      sur des palettes existantes (initial_pallets non vide)
 """
 
 from typing import List, Optional, Tuple
@@ -23,7 +36,15 @@ from core.placement_engine import find_best_placement, make_placed_box
 
 
 def _make_new_pallet(pallet_id: int, params: OptimizationParameters) -> Pallet:
-    """Creates a fresh empty pallet with standard dimensions."""
+    """
+    Crée une nouvelle palette vide avec les dimensions standard.
+
+    Paramètres :
+        pallet_id : identifiant unique attribué à cette palette
+        params    : paramètres de l'optimiseur (dimensions physiques de la palette)
+
+    Retourne une Pallet vide avec id=pallet_id et les dimensions de params.
+    """
     return Pallet(
         id=pallet_id,
         length=params.pallet_length,
@@ -41,59 +62,74 @@ def pack_boxes_ffd(
     allow_multi_client: bool = True,
 ) -> List[Pallet]:
     """
-    Packs a pre-sorted list of boxes onto pallets using First Fit Decreasing.
+    Emballe une liste de boîtes pré-triées sur des palettes avec FFD.
 
-    Args:
-        boxes:              Pre-sorted list of boxes to pack.
-        params:             Optimization parameters.
-        initial_pallets:    Optionally start from existing pallets (for Phase 2).
-        next_pallet_id:     ID to assign to the first newly created pallet.
-        allow_multi_client: When False, a box may only be placed on a pallet
-                            that is empty or already contains boxes from the
-                            same client, preventing new mixed-client pallets.
+    Paramètres :
+        boxes              : liste de boîtes à emballer (doit être pré-triée par
+                             sort_boxes_for_packing() avant cet appel)
+        params             : paramètres de l'optimiseur
+        initial_pallets    : si fourni, tente d'abord de placer sur ces palettes
+                             existantes (utile pour la Phase 3 de repacking)
+        next_pallet_id     : ID à attribuer à la prochaine palette créée
+        allow_multi_client : si False, interdit de mélanger les clients sur une palette.
+                             Une boîte de client A ne sera jamais placée sur une palette
+                             contenant déjà des boîtes du client B.
 
-    Returns:
-        List of pallets (including any from initial_pallets) after packing.
-        Boxes that could not be placed are silently skipped (should not happen
-        with well-configured parameters, but added as a safeguard).
+    Retourne :
+        Liste de toutes les palettes (existantes + nouvelles) avec les boîtes placées.
+        Les boîtes qui n'ont pu être placées nulle part sont ignorées (cas très rare —
+        signifie une boîte plus grande que la palette elle-même).
+
+    Déroulement détaillé pour chaque boîte :
+        Étape 1 : cherche la première palette existante qui accepte la boîte.
+                  « Accepte » = find_best_placement() retourne une position valide.
+                  Si allow_multi_client=False, saute les palettes qui créeraient un mélange.
+
+        Étape 2 : si aucune palette existante ne convient, crée une nouvelle palette
+                  vide et tente d'y placer la boîte.
+                  Si même la palette vide ne convient pas (boîte trop grande/lourde),
+                  affiche un avertissement et ignore la boîte.
     """
-    # Start from any existing pallets (Phase 2 repack uses this)
+    # Démarre avec les palettes éventuellement fournies (pour le repacking)
     pallets: List[Pallet] = list(initial_pallets) if initial_pallets else []
     pallet_counter = next_pallet_id
 
-    unplaced: List[Box] = []   # track any box that truly cannot be placed
+    unplaced: List[Box] = []   # boîtes impossibles à placer (très rare)
 
     for box in boxes:
         placed = False
 
-        # ── Step 1: try each existing pallet ──────────────────────────────────
+        # ── Étape 1 : essaie chaque palette existante ────────────────────────
         best_pallet: Optional[Pallet] = None
         best_result: Optional[Tuple]  = None
 
         for pallet in pallets:
-            # Skip pallets that would create a new mixed-client situation
+            # Filtre : si on interdit le multi-client et que la palette n'est
+            # pas vide, on vérifie que tous ses colis appartiennent au même client.
             if not allow_multi_client and pallet.boxes:
                 if any(pb.client_id != box.client_id for pb in pallet.boxes):
-                    continue
+                    continue   # palette déjà occupée par un autre client → saute
 
+            # Cherche la meilleure position sur cette palette
             result = find_best_placement(box, pallet, params)
             if result is None:
-                continue    # no valid position on this pallet
+                continue    # aucune position valide sur cette palette → essaie la suivante
 
-            # First Fit: use the first pallet that accepts the box
+            # First Fit : on prend la PREMIÈRE palette qui accepte (pas la meilleure)
             best_result = result
             best_pallet = pallet
-            break
+            break   # inutile de chercher plus loin
 
         if best_pallet is not None:
-            # Place the box on the best pallet found
+            # Place la boîte sur la palette trouvée
             x, y, z, orientation = best_result
             placed_box = make_placed_box(box, x, y, z, orientation)
+            # Numéro de séquence = combien de boîtes étaient déjà là + 1
             placed_box.sequence = len(best_pallet.boxes) + 1
             best_pallet.boxes.append(placed_box)
             placed = True
 
-        # ── Step 2: open a new pallet if no existing one works ─────────────────
+        # ── Étape 2 : ouvre une nouvelle palette si aucune n'a convenu ─────
         if not placed:
             new_pallet = _make_new_pallet(pallet_counter, params)
             pallet_counter += 1
@@ -102,16 +138,17 @@ def pack_boxes_ffd(
             if result is not None:
                 x, y, z, orientation = result
                 placed_box = make_placed_box(box, x, y, z, orientation)
-                placed_box.sequence = 1
+                placed_box.sequence = 1   # première boîte sur cette palette
                 new_pallet.boxes.append(placed_box)
                 pallets.append(new_pallet)
             else:
-                # Box physically cannot fit on any pallet (too large / too heavy)
+                # Cas exceptionnel : la boîte ne rentre même pas sur une palette vide
+                # (dimensions ou poids incompatibles avec les paramètres configurés)
                 unplaced.append(box)
                 print(
-                    f"[FFD] WARNING: Box {box.id!r} could not be placed "
+                    f"[FFD] AVERTISSEMENT : boîte {box.id!r} impossible à placer "
                     f"(dims {box.length}×{box.width}×{box.height}, "
-                    f"weight {box.weight}kg). Skipping."
+                    f"poids {box.weight}kg). Ignorée."
                 )
 
     return pallets

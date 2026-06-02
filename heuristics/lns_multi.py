@@ -1,24 +1,33 @@
 """
-LNS — multi-client pass (Phase 4).
+LNS — passe multi-client (Phase 4).
 
-Cost function:
-    cost = cost_multi_pallet_count * pallet_count
+Objectif : améliorer un pool de palettes mélangeant plusieurs clients en
+réduisant le nombre total de palettes.
 
-Primary goal:  reduce the number of pallets.
+Différences avec la passe mono (lns_mono.py) :
+    1. La fonction de coût est plus simple : uniquement le nombre de palettes.
+       La répartition P2 et l'équilibre de remplissage sont gérés par post_processing.py.
+    2. La stratégie de destruction est différente :
+       → On détruit les N MOINS REMPLIES (fraction lns_multi_destroy_ratio),
+         avec un minimum forcé de 2 palettes détruites.
+       → Forcer 2 destructions minimum évite un problème : avec seulement 1 palette
+         détruite, les palettes survivantes sont figées et FFD ne peut qu'empiler
+         par-dessus. Avec 2+ destructions, les boîtes des deux palettes se mélangent,
+         ce qui permet de vrais réarrangements (ex. interleaver des couches).
+    3. Il n'y a pas de restriction sur le mélange de clients (c'est le but même
+       de la Phase 4 : optimiser les palettes multi-client).
 
-Destroy strategy (per iteration):
-    Destroy the bottom lns_multi_destroy_ratio fraction of least-filled pallets
-    (at least one) entirely — all their boxes enter the pool.
-    Surviving pallets are kept untouched.
+Fonction de coût (Phase 4) :
+    coût = cost_multi_pallet_count × nombre_de_palettes
 
-Repair strategy:
-    The pool is shuffled randomly.  Priority-1 boxes are sorted before
-    priority-2 boxes to respect the placement order constraint.
-    Each box is placed using a perturbed placement: all valid (EP, orientation)
-    combinations are collected, sorted by score, and one is chosen randomly
-    from the top-k (lns_multi_repair_top_k).  This lets the search escape
-    deterministic local optima while remaining guided by the score.
-    New pallets are opened only when no existing pallet can accept the box.
+Stratégie Destroy :
+    Trie toutes les palettes du pool par taux de remplissage croissant.
+    Sélectionne les max(2, int(N × destroy_ratio)) moins remplies → pool.
+    Les palettes non sélectionnées sont « survivantes » (inchangées).
+
+Stratégie Repair :
+    Identique à la passe mono : mélange aléatoire + top-k perturbé.
+    Pas de restriction sur le mélange de clients pendant la réparation.
 """
 
 import copy
@@ -38,16 +47,20 @@ from core.placement_engine import (
 from heuristics.lns_utils import make_pool_box, get_next_pallet_id
 
 
-# ── Cost function ──────────────────────────────────────────────────────────────
+# ── Fonction de coût ───────────────────────────────────────────────────────────
 
 def compute_cost_multi(pallets: List[Pallet], params: OptimizationParameters) -> float:
     """
-    Evaluates a multi-client solution.
+    Évalue la qualité d'une solution multi-client.
 
-    Lower cost = better solution.
+    Formule :
+        coût = cost_multi_pallet_count × nombre_de_palettes
 
-    Formula:
-        cost = cost_multi_pallet_count * pallet_count
+    Un coût plus faible = meilleure solution (moins de palettes = moins de transport).
+    La répartition des boîtes P2 est intentionnellement ignorée ici : elle sera
+    optimisée séparément dans post_processing.py (Phase 5).
+
+    Retourne 0.0 si la liste de palettes est vide.
     """
     if not pallets:
         return 0.0
@@ -55,13 +68,12 @@ def compute_cost_multi(pallets: List[Pallet], params: OptimizationParameters) ->
     return params.cost_multi_pallet_count * len(pallets)
 
 
-# ── Pool helpers ───────────────────────────────────────────────────────────────
-# make_pool_box and get_next_pallet_id are imported from lns_utils
+# ── Alias des utilitaires partagés ────────────────────────────────────────────
 _make_pool_box      = make_pool_box
 _get_next_pallet_id = get_next_pallet_id
 
 
-# ── Perturbed repair ───────────────────────────────────────────────────────────
+# ── Placement avec perturbation (top-k) ───────────────────────────────────────
 
 def _find_placement_top_k(
     box: Box,
@@ -71,14 +83,20 @@ def _find_placement_top_k(
     top_k: int,
 ) -> Optional[Tuple[float, float, float, object]]:
     """
-    Like find_best_placement but picks randomly from the top-k valid positions.
+    Variante perturbée de find_best_placement : retourne une position tirée
+    aléatoirement parmi les top-k meilleures positions valides.
 
-    Collects every valid (EP, orientation) candidate, scores them identically
-    to find_best_placement, sorts ascending, then returns a randomly chosen
-    candidate from the top-k.  When top_k=1 this degenerates to the
-    deterministic best placement.
+    Identique à la version dans lns_mono.py mais sans la restriction
+    multi-client (toutes les palettes peuvent recevoir n'importe quel client).
 
-    Returns (x, y, z, orientation) or None if no valid position exists.
+    Paramètres :
+        box    : boîte à placer
+        pallet : palette cible
+        params : paramètres d'optimisation
+        rng    : générateur aléatoire (pour le tirage dans le top-k)
+        top_k  : taille du bassin de sélection (1 = déterministe, comme find_best_placement)
+
+    Retourne (x, y, z, orientation) ou None si aucune position valide.
     """
     from models.orientation import get_oriented_dimensions
 
@@ -117,19 +135,26 @@ def _repair_with_perturbation(
     next_pallet_id: int,
 ) -> List[Pallet]:
     """
-    Repairs the pool onto surviving pallets using perturbed placement.
+    Phase de réparation pour le LNS multi-client.
 
-    For each box in the pool:
-        1. Try each existing pallet — pick a random position from its top-k
-           valid candidates (lns_multi_repair_top_k).  Use the first pallet
-           that offers at least one valid position (First Fit, but with
-           intra-pallet position perturbation).
-        2. If no existing pallet accepts the box, open a new pallet and
-           place deterministically (best position — no benefit in perturbing
-           an empty pallet since all EPs collapse to the origin).
+    Identique à la version mono sauf qu'il n'y a PAS de restriction sur le
+    mélange de clients (c'est justement le but de la Phase 4 d'optimiser
+    des palettes multi-client).
 
-    Boxes that cannot be placed on any pallet (too large/heavy) are skipped
-    with a warning, consistent with FFD behaviour.
+    Pour chaque boîte du pool :
+        1. Essaie chaque palette existante avec un placement top-k perturbé.
+           Prend la première qui accepte (First Fit).
+        2. Si aucune palette ne convient, ouvre une nouvelle palette et y
+           place la boîte de façon déterministe.
+
+    Paramètres :
+        pool_boxes        : boîtes à replacer (Box reconstruites depuis PlacedBox)
+        surviving_pallets : palettes non détruites (conservées intactes)
+        params            : paramètres d'optimisation
+        rng               : générateur aléatoire partagé
+        next_pallet_id    : premier ID disponible pour une nouvelle palette
+
+    Retourne la liste de palettes après réparation.
     """
     top_k   = params.lns_multi_repair_top_k
     pallets = list(surviving_pallets)
@@ -165,13 +190,13 @@ def _repair_with_perturbation(
                 new_pallet.boxes.append(pb)
                 pallets.append(new_pallet)
             else:
-                print(f"[LNS-multi] WARNING: Box {box.id!r} could not be placed "
-                      f"(dims {box.length}×{box.width}×{box.height}). Skipping.")
+                print(f"[LNS-multi] AVERTISSEMENT : boîte {box.id!r} impossible à placer "
+                      f"(dims {box.length}×{box.width}×{box.height}). Ignorée.")
 
     return pallets
 
 
-# ── Single-pass LNS ────────────────────────────────────────────────────────────
+# ── Passe LNS principale ───────────────────────────────────────────────────────
 
 def _lns_pass(
     initial_pallets: List[Pallet],
@@ -184,32 +209,33 @@ def _lns_pass(
     cost_fn: Callable,
 ) -> List[Pallet]:
     """
-    Runs one LNS pass on the given multi-client pallets.
+    Exécute une passe LNS multi-client sur les palettes données.
 
-    Each iteration:
-        Destroy  — remove the bottom lns_multi_destroy_ratio fraction of
-                   least-filled pallets (at least one) entirely.
-                   Surviving pallets are kept untouched.
-        Randomise — shuffle pool order, then sort P1 before P2.
-        Repair   — repack the pool onto surviving pallets with perturbed FFD.
-        Accept   — keep the new solution only if cost strictly improves and
-                   no box was lost.
+    Différence principale avec _lns_pass de lns_mono :
+        Stratégie de destruction multi-palette :
+            - Trie toutes les palettes par remplissage croissant.
+            - Sélectionne les max(2, floor(N × destroy_ratio)) moins remplies.
+            - Force minimum 2 palettes détruites pour permettre de vraies fusions
+              (avec 1 seule palette détruite, les survivantes sont figées et seul
+               du remplissage vertical additionnel est possible, pas de réarrangement).
 
-    Args:
-        initial_pallets: Pallets to optimise.
-        box_lookup:      Mapping box_id → original Box.
-        params:          Optimization parameters.
-        rng:             Shared random state.
-        time_limit:      Wall-clock budget for this pass (seconds).
-        max_iterations:  Maximum iterations for this pass.
-        label:           Log prefix (e.g. "[LNS-multi]").
-        cost_fn:         Cost function (pallets, params) → float.
+    Boucle principale identique à lns_mono :
+        DESTROY → RANDOMISE → REPAIR → ACCEPT
 
-    Returns:
-        Best pallet list found within the budget.
+    Paramètres :
+        initial_pallets  : palettes à optimiser
+        box_lookup       : dict { box_id → Box original }
+        params           : paramètres d'optimisation
+        rng              : générateur aléatoire
+        time_limit       : budget temps (secondes)
+        max_iterations   : nombre maximum d'itérations
+        label            : préfixe pour les messages de log
+        cost_fn          : fonction de coût (pallets, params) → float
+
+    Retourne la meilleure liste de palettes trouvée.
     """
     if not initial_pallets:
-        print(f"{label} No pallets to optimise — skipping.")
+        print(f"{label} Aucune palette à optimiser — saut.")
         return initial_pallets
 
     best_pallets = copy.deepcopy(initial_pallets)
@@ -220,27 +246,22 @@ def _lns_pass(
     improvement_count     = 0
     last_improvement_iter = 0
 
-    print(f"{label} Starting. Cost: {best_cost:.2f}, pallets: {len(best_pallets)}")
+    print(f"{label} Démarrage. Coût : {best_cost:.2f}, palettes : {len(best_pallets)}")
 
     while (iteration < max_iterations and
            time.time() - start_time < time_limit):
 
         iteration += 1
 
-        # ── Destroy ────────────────────────────────────────────────────────────
+        # ── DESTROY ─────────────────────────────────────────────────────────────
         current = copy.deepcopy(best_pallets)
 
-        # Identify the bottom least-filled pallets to destroy.
-        # Floor of 2: with only 1 pallet destroyed, the surviving ones are
-        # frozen and FFD can only stack on top of them — true fusion (e.g.
-        # interleaving boxes between existing layers of a stack) is impossible.
-        # Forcing ≥ 2 destructions guarantees at least 2 pallets are merged
-        # together each iteration, so small groups (2..6 multi pallets) get a
-        # real chance to reorganize. Larger groups are unaffected (30 %
-        # already dominates).
+        # Nombre de palettes à détruire : au moins 2 pour forcer de vraies fusions
         n_destroy = max(2, int(len(current) * params.lns_multi_destroy_ratio))
+        # Trie les palettes par taux de remplissage croissant
         sorted_by_fill = sorted(range(len(current)),
                                 key=lambda i: current[i].volumetric_fill_ratio)
+        # Sélectionne les n_destroy moins remplies comme ensemble à détruire
         destroy_indices = set(sorted_by_fill[:n_destroy])
 
         pool_pbs: List[PlacedBox]       = []
@@ -248,39 +269,30 @@ def _lns_pass(
 
         for i, pallet in enumerate(current):
             if i in destroy_indices:
-                # Destroy entirely — all boxes go to pool
-                pool_pbs.extend(pallet.boxes)
+                pool_pbs.extend(pallet.boxes)  # toutes les boîtes dans le pool
                 continue
+            surviving_pallets.append(pallet)   # palette survivante : inchangée
 
-            # Surviving pallets are kept untouched
-            surviving_pallets.append(pallet)
-
-        # ── Build and randomise pool ────────────────────────────────────────────
+        # ── Construction et mélange du pool ─────────────────────────────────────
         if not pool_pbs:
             continue
 
-        # Reconstruct Box objects (all orientations preserved)
         pool_boxes = [_make_pool_box(pb, box_lookup) for pb in pool_pbs]
+        rng.shuffle(pool_boxes)                          # mélange aléatoire
+        pool_boxes.sort(key=lambda b: b.priority)        # P1 avant P2
 
-        # Shuffle order (perturbation)
-        rng.shuffle(pool_boxes)
-
-        # Enforce P1 before P2 (stable sort preserves the random order within
-        # each priority group)
-        pool_boxes.sort(key=lambda b: b.priority)
-
-        # ── Repair ─────────────────────────────────────────────────────────────
-        next_id = _get_next_pallet_id(surviving_pallets)
+        # ── REPAIR ───────────────────────────────────────────────────────────────
+        next_id     = _get_next_pallet_id(surviving_pallets)
         new_pallets = _repair_with_perturbation(
             pool_boxes, surviving_pallets, params, rng,
             next_pallet_id=next_id,
         )
 
-        # ── Accept / reject ────────────────────────────────────────────────────
+        # ── ACCEPT / REJECT ──────────────────────────────────────────────────────
         boxes_before = sum(len(p.boxes) for p in best_pallets)
         boxes_after  = sum(len(p.boxes) for p in new_pallets)
         if boxes_after < boxes_before:
-            continue
+            continue   # boîte perdue → rejet immédiat
 
         new_cost = cost_fn(new_pallets, params)
         if new_cost < best_cost:
@@ -288,23 +300,23 @@ def _lns_pass(
             best_pallets          = copy.deepcopy(new_pallets)
             improvement_count    += 1
             last_improvement_iter = iteration
-            print(f"{label} iter {iteration:4d}: improved cost → {best_cost:.2f}, "
-                  f"pallets: {len(best_pallets)}")
+            print(f"{label} iter {iteration:4d}: coût amélioré → {best_cost:.2f}, "
+                  f"palettes : {len(best_pallets)}")
 
     elapsed    = time.time() - start_time
     stagnation = iteration - last_improvement_iter
     stag_pct   = stagnation / max(1, iteration) * 100
     print(
-        f"{label} Done. {iteration} iters in {elapsed:.1f}s | "
-        f"improvements: {improvement_count} | "
-        f"stagnation: {stagnation} iters ({stag_pct:.0f}%) | "
-        f"pallets: {len(initial_pallets)}→{len(best_pallets)}"
+        f"{label} Terminé. {iteration} iter en {elapsed:.1f}s | "
+        f"améliorations: {improvement_count} | "
+        f"stagnation: {stagnation} iter ({stag_pct:.0f}%) | "
+        f"palettes: {len(initial_pallets)}→{len(best_pallets)}"
     )
 
     return best_pallets
 
 
-# ── Entry point ────────────────────────────────────────────────────────────────
+# ── Point d'entrée public ──────────────────────────────────────────────────────
 
 def lns_multi_client(
     pallets: List[Pallet],
@@ -313,48 +325,59 @@ def lns_multi_client(
     extra_mono: List[Pallet] = None,
 ) -> List[Pallet]:
     """
-    Runs LNS on multi-client pallets, plus any mono pallets that the caller
-    flags as candidates for re-mixing (typically Phase 3 leftovers — mono
-    pallets produced by FFD when boxes from multiple clients didn't mix).
+    Exécute le LNS sur les palettes multi-client, plus d'éventuelles palettes
+    mono-client « restantes » (leftovers) de la Phase 3.
 
-    Args:
-        pallets:        Current pallet list (typically after Phase 3 repack).
-        original_boxes: Full set of original Box objects.
-        params:         Optimization parameters.
-        extra_mono:     Optional list of mono-client pallets to include in the
-                        LNS pool alongside the multi pallets. Identified by
-                        Python object identity (`id()`), so the caller MUST
-                        pass the actual Pallet objects present in `pallets`,
-                        not deepcopies. Pass `None`/empty for the legacy
-                        behaviour (multi-only).
+    Qu'est-ce qu'un leftover Phase 3 ?
+        Lors du repacking Phase 3, FFD peut créer de nouvelles palettes
+        mono-client : des boîtes d'un seul client que FFD n'a pas réussi à
+        intégrer dans le pool multi-client. Ces palettes passent souvent mieux
+        si on les soumet au LNS multi-client (destroy + repair avec perturbation),
+        qui peut trouver un arrangement que FFD greedy a raté.
 
-    Returns:
-        Unchanged mono-client pallets (those NOT in `extra_mono`) + improved
-        pool (multi + extra_mono after LNS).
+    Identification des leftovers :
+        Les leftovers sont identifiés par identité d'objet Python (id(p)).
+        L'appelant passe les VRAIS objets Pallet présents dans `pallets`, pas des copies.
+        Tout mono dont l'id() Python n'est pas dans extra_mono est laissé intact.
+
+    Paramètres :
+        pallets        : liste complète des palettes (multi + mono)
+        original_boxes : toutes les Box originales
+        params         : paramètres d'optimisation
+        extra_mono     : palettes mono-client à inclure dans le pool LNS
+                         (None ou liste vide = comportement classique multi-only)
+
+    Retourne :
+        Palettes mono intactes (hors extra_mono) + pool amélioré (multi + extra_mono).
     """
     rng        = random.Random(params.lns_multi_random_seed)
     box_lookup = {b.id: b for b in original_boxes}
 
+    # Identifie les objets extra_mono par leur adresse Python pour éviter les copies
     extra_ids      = {id(p) for p in (extra_mono or [])}
+    # Pool = palettes multi-client + leftovers mono explicitement fournis
     pool           = [p for p in pallets if p.is_multi_client or id(p) in extra_ids]
+    # Palettes mono non touchées : passent directement en sortie
     untouched_mono = [p for p in pallets if not p.is_multi_client and id(p) not in extra_ids]
 
     if len(pool) <= 1:
         if not pool:
-            print("[LNS-multi] No multi-client pallets — skipping.")
+            print("[LNS-multi] Aucune palette multi-client — saut.")
         else:
-            print(f"[LNS-multi] Pool too small ({len(pool)} pallet) — skipping.")
+            print(f"[LNS-multi] Pool trop petit ({len(pool)} palette) — saut.")
         return pallets
 
     if extra_ids:
-        print(f"[LNS-multi] Pool: {len(pool)} pallet(s) "
-              f"({len(pool) - len(extra_ids)} multi + {len(extra_ids)} Phase-3 leftover mono).")
+        print(f"[LNS-multi] Pool : {len(pool)} palette(s) "
+              f"({len(pool) - len(extra_ids)} multi + {len(extra_ids)} leftover(s) Phase-3).")
 
+    # Calcule le budget proportionnellement à la taille du pool
     pool_size   = len(pool)
     time_budget = max(1.0, pool_size * params.lns_multi_time_per_pallet)
     iter_budget = max(1,   pool_size * params.lns_multi_iter_per_pallet)
-    print(f"[LNS-multi] Budget: {pool_size} palettes × "
+    print(f"[LNS-multi] Budget : {pool_size} palettes × "
           f"{params.lns_multi_time_per_pallet}s = {time_budget:.1f}s / {iter_budget} iters")
+
     improved_pool = _lns_pass(
         pool, box_lookup, params, rng,
         time_limit=time_budget,
@@ -362,4 +385,5 @@ def lns_multi_client(
         label="[LNS-multi]",
         cost_fn=compute_cost_multi,
     )
+
     return untouched_mono + improved_pool

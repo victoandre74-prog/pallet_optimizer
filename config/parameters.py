@@ -1,13 +1,36 @@
 """
-Global optimization parameters for the 3D palletization system.
+Paramètres globaux de l'optimiseur de palettisation 3D.
 
-Centralizing all tunable parameters here makes it easy to adjust
-the optimizer's behavior without touching the algorithmic code.
+Ce fichier centralise TOUS les paramètres réglables du système.
+Modifier une valeur ici se répercute automatiquement dans tout l'algorithme
+sans qu'il soit nécessaire de toucher au code de logique.
+
+Organisation des paramètres :
+    ── Géométrie de la palette (dimensions physiques)
+    ── Physique / stabilité (règles de sécurité)
+    ── Ergonomie (sécurité opérateur)
+    ── Stratégie multi-client (quand et comment fusionner des palettes ?)
+    ── LNS mono-client (Phase 2)
+    ── LNS multi-client (Phase 4)
+    ── Post-processing (Phase 5)
+
+Pour un débutant — qu'est-ce qu'un @dataclass ?
+    Un @dataclass est une classe Python pour laquelle Python génère
+    automatiquement __init__, __repr__, etc. à partir des attributs déclarés.
+    Ici, OptimizationParameters() crée un objet avec toutes les valeurs par défaut.
+    On peut surcharger : OptimizationParameters(pallet_length=120.0).
+
+PARAM_BOUNDS :
+    Dictionnaire qui définit les plages valides pour chaque paramètre numérique.
+    Permet à __post_init__ de valider les valeurs à la création de l'objet.
 """
 
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields   # fields() liste tous les champs d'une dataclass
 
 
+# Plages valides pour chaque paramètre numérique.
+# Format : nom_parametre → (valeur_minimale, valeur_maximale)
+# Utilisé dans __post_init__ pour valider les paramètres à la construction.
 PARAM_BOUNDS: dict[str, tuple] = {
     "pallet_length":                 (1,     300),
     "pallet_width":                  (1,     300),
@@ -45,177 +68,231 @@ PARAM_BOUNDS: dict[str, tuple] = {
 @dataclass
 class OptimizationParameters:
     """
-    All configurable parameters for the palletization optimizer.
+    Tous les paramètres configurables de l'optimiseur de palettisation.
 
-    Attributes:
-        --- Pallet geometry ---
-        pallet_length:   Pallet dimension along X axis (cm)
-        pallet_width:    Pallet dimension along Y axis (cm)
-        pallet_max_height: Maximum stacking height along Z axis (cm)
-        pallet_max_weight: Maximum total weight per pallet (kg)
+    Chaque attribut a une valeur par défaut raisonnable pour un usage standard.
+    Surcharger un paramètre au moment de la création de l'objet :
+        params = OptimizationParameters(pallet_length=120.0, stability_ratio=5.0)
 
-        --- Physics / stability ---
-        min_support_ratio:   Minimum fraction of a box base that must rest
-                             on another box or the floor (0.0 – 1.0)
-        stability_ratio:     Maximum allowed ratio of stack height to its
-                             narrowest base dimension (prevents tall thin towers)
+    ────────────────────────────────────────────────────────────────────────────
+    GÉOMÉTRIE DE LA PALETTE
+    ────────────────────────────────────────────────────────────────────────────
+        pallet_length       : longueur de la palette selon X (cm)
+        pallet_width        : largeur de la palette selon Y (cm)
+        pallet_max_height   : hauteur maximale d'empilement selon Z (cm)
+        pallet_max_weight   : masse totale maximale par palette (kg)
 
-        --- Ergonomics ---
-        priority2_max_deposit_height: Maximum z coordinate (cm) at which the
-            bottom of a priority-2 box may be placed.  Prevents manual-handling
-            ergonomic issues by keeping hand-deposited boxes within reach.
+    ────────────────────────────────────────────────────────────────────────────
+    PHYSIQUE / STABILITÉ
+    ────────────────────────────────────────────────────────────────────────────
+        min_support_ratio   : fraction minimale de la base d'une boîte qui doit
+                              reposer sur d'autres boîtes ou le sol (0.0 à 1.0).
+                              Ex : 0.80 = au moins 80% de la surface doit être soutenue.
 
-        --- Multi-client strategy ---
-        enable_multi_client:        Enable Phase 3 (pallet merging) and Phase 4
-                                    (multi-client LNS).  Set to False to keep every
-                                    pallet mono-client.
-        multi_client_minimum_ratio: Soft-stop lower bound for Phase 3 in the
-                                    11..70 and >70 pallet regimes — contributes
-                                    to the compound stop condition.
-        multi_client_maximum_ratio: Hard-stop upper bound for Phase 3 in the
-                                    11..70 and >70 pallet regimes — always exits
-                                    once multi/total > this ratio.
-        min_filling_ratio:          Stop condition for the small-group regime
-                                    (≤10 pallets).  A merge of two pallets only
-                                    happens if the resulting average fill ratio
-                                    would still be below this value, so the loop
-                                    keeps merging while pallets are noticeably
-                                    underfilled.
+        stability_ratio     : ratio maximal autorisé entre la hauteur d'une pile
+                              et sa dimension de base la plus étroite.
+                              Formule : hauteur_pile / base_min < stability_ratio
+                              Ex : 7.0 → une pile de 70 cm doit avoir une base ≥ 10 cm.
 
-        --- Large Neighbourhood Search (mono-client pass) ---
-        lns_mono_time_per_pallet:   Wall-clock budget per pallet in the group (seconds).
-                                    Total budget = group_size × this value.
-        lns_mono_small_box_volume:  Boxes below this volume (cm³) are also extracted
-                                    from surviving pallets each iteration (alongside the
-                                    destroyed pallets), giving the repair step more room.
-        lns_mono_repair_top_k:      Pick randomly from top-k valid positions
-                                    (EP × orientation) during repair.
-        lns_mono_iter_per_pallet:   LNS iterations allocated per pallet in the group.
-                                    Total cap = group_size × this value.
-        lns_mono_random_seed:       Seed for reproducible mono-client runs.
+    ────────────────────────────────────────────────────────────────────────────
+    ERGONOMIE
+    ────────────────────────────────────────────────────────────────────────────
+        priority2_max_deposit_height : altitude maximale (cm) de la base d'une boîte
+                              de priorité 2. Les P2 sont posées à la main par un
+                              opérateur — si la base est trop haute, le geste est
+                              dangereux pour le dos. Valeur typique : 160 cm.
 
-        --- Large Neighbourhood Search (multi-client pass) ---
-        lns_multi_time_per_pallet:   Wall-clock budget per pallet in the pool (seconds).
-                                     Total budget = pool_size × this value.
-        lns_multi_iter_per_pallet:   LNS iterations allocated per pallet in the pool.
-                                     Total cap = pool_size × this value.
-        lns_multi_random_seed:       Seed for reproducible multi-client runs
-        lns_multi_destroy_ratio:     Fraction of least-filled pallets destroyed
-                                     each iteration (at least 1 pallet)
-        lns_multi_repair_top_k:      Pick randomly from top-k valid positions
-                                     (EP × orientation) during repair
+    ────────────────────────────────────────────────────────────────────────────
+    STRATÉGIE MULTI-CLIENT (Phase 3)
+    ────────────────────────────────────────────────────────────────────────────
+    La Phase 3 fusionne des palettes sous-remplies de clients différents.
+    Le comportement s'adapte automatiquement au nombre de palettes :
 
-        --- Post-processing LNS (pp_*) ---
-        pp_time_per_pallet:   Wall-clock budget per pallet in the group (seconds).
-                              Total budget = group_size × this value.
-        pp_iter_per_pallet:   LNS iterations allocated per pallet in the group.
-                              Total cap = group_size × this value.
-        pp_top_k:            Random-draw pool size for assignment (Least-Loaded-First
-                             picks from the top-k candidates) and for placement
-                             (_find_best_placement scores all EPs, picks the best).
-        pp_random_seed:      Seed for reproducible post-processing runs.
-        pp_w_contact:        Cost weight — reward P2→P1 lateral contact area (cm²).
-        pp_w_fill:           Cost weight — penalise fill-ratio variance across pallets.
-        pp_w_p2:             Cost weight — penalise P2-count variance across pallets.
-        pp_w_height:         Cost weight — penalise mean height ratio (current / max).
-        pp_w_stability:      Cost weight — penalise worst stability ratio across group.
-        pp_center_min_shift: Minimum shift (cm) to apply load-centering in X or Y.
+        enable_multi_client   : False = désactive Phase 3 et Phase 4 entièrement.
+                                Utile pour garder chaque palette strictement mono-client.
+
+        min_filling_ratio     : seuil de remplissage moyen pour le régime ≤10 palettes.
+                                La fusion s'arrête quand l'average fill dépasse ce seuil.
+                                Ex : 0.40 = arrêt quand la moyenne dépasse 40%.
+
+        multi_client_minimum_ratio : borne inférieure souple pour le régime ≥11 palettes.
+                                     La fusion s'arrête quand le ratio palettes_multi/total
+                                     dépasse cette valeur ET que la palette mono la moins
+                                     remplie dépasse min_filling_ratio.
+                                     Ex : 0.12 = arrêt souple à 12% de palettes multi.
+
+        multi_client_maximum_ratio : borne supérieure dure. La fusion s'arrête
+                                     TOUJOURS quand ce ratio est atteint.
+                                     Ex : 0.20 = jamais plus de 20% de palettes multi.
+
+    Résumé des régimes (voir pallet_optimizer.py pour le détail complet) :
+        1 client ou 1 palette    → pas de fusion
+        2 palettes               → fusion si avg fill < min_filling_ratio
+        3 à 10 palettes          → fusion des 2 moins remplies, puis boucle d'alimentation
+        11 à 70 palettes         → boucle avec conditions d'arrêt min/max ratio
+        > 70 palettes            → boucle par paires pour accélérer
+
+    ────────────────────────────────────────────────────────────────────────────
+    LNS MONO-CLIENT (Phase 2) — Large Neighbourhood Search
+    ────────────────────────────────────────────────────────────────────────────
+    Le LNS est une méta-heuristique d'optimisation : à chaque itération,
+    on « détruit » une partie de la solution et on la « répare » différemment.
+    Si la nouvelle solution est meilleure, on la conserve.
+
+    Stratégie Destroy (Phase 2) :
+        - Retire entièrement la palette la moins remplie (toutes ses boîtes dans le pool)
+        - Retire aussi les petites boîtes (volume < lns_mono_small_box_volume) des
+          palettes survivantes (pour donner plus de liberté au moteur de réparation)
+
+    Stratégie Repair :
+        - Mélange aléatoirement l'ordre du pool
+        - Place chaque boîte avec une position tirée aléatoirement parmi les top-k meilleures
+          (perturbation contrôlée — pas purement aléatoire, pas purement greedy)
+
+        lns_mono_time_per_pallet  : budget temps par palette du groupe (secondes).
+                                    Budget total = taille_groupe × cette_valeur.
+        lns_mono_small_box_volume : volume (cm³) en dessous duquel une boîte est
+                                    extraite des palettes survivantes à chaque itération.
+        lns_mono_repair_top_k     : taille du bassin de sélection aléatoire (1 = déterministe).
+        lns_mono_iter_per_pallet  : nombre d'itérations allouées par palette du groupe.
+        lns_mono_random_seed      : graine aléatoire pour la reproductibilité.
+
+    ────────────────────────────────────────────────────────────────────────────
+    LNS MULTI-CLIENT (Phase 4)
+    ────────────────────────────────────────────────────────────────────────────
+    Même principe que le LNS mono, mais appliqué à un pool mixte (plusieurs clients).
+
+    Stratégie Destroy (Phase 4) :
+        - Retire les lns_multi_destroy_ratio × N palettes les moins remplies
+          (au moins 2 sont toujours détruites pour forcer de vraies fusions)
+
+        lns_multi_time_per_pallet  : budget temps par palette du pool (secondes)
+        lns_multi_iter_per_pallet  : nombre d'itérations allouées par palette du pool
+        lns_multi_random_seed      : graine aléatoire
+        lns_multi_destroy_ratio    : fraction de palettes détruites à chaque itération
+        lns_multi_repair_top_k     : taille du bassin de sélection aléatoire
+
+    ────────────────────────────────────────────────────────────────────────────
+    POST-PROCESSING LNS (Phase 5, préfixe pp_*)
+    ────────────────────────────────────────────────────────────────────────────
+    Phase d'amélioration finale qui optimise 5 objectifs simultanément :
+        1. Contact P2→P1 : placer les boîtes manuelles contre les lourdes (stabilité)
+        2. Équilibre de remplissage : remplissage similaire entre palettes du groupe
+        3. Répartition des P2 : distribution équitable des boîtes manuelles
+        4. Hauteur : minimiser la hauteur moyenne des palettes
+        5. Stabilité : minimiser le ratio de stabilité le plus défavorable
+
+    Chaque objectif a un poids qui détermine son importance relative dans
+    la fonction de coût globale.
+
+        pp_time_per_pallet   : budget temps par palette (secondes)
+        pp_iter_per_pallet   : nombre d'itérations totales
+        pp_top_k             : taille du bassin pour le placement P2 et la sélection
+        pp_random_seed       : graine aléatoire
+
+        pp_w_contact         : poids du contact P2→P1 (récompense)
+        pp_w_fill            : poids de la variance de remplissage (pénalité)
+        pp_w_p2              : poids de la variance du nombre de P2 (pénalité)
+        pp_w_height          : poids de la hauteur moyenne normalisée (pénalité)
+        pp_w_stability       : poids du pire ratio de stabilité (pénalité)
+
+        pp_center_min_shift  : décalage minimal (cm) pour appliquer le centrage de charge
     """
 
-    # ── Pallet geometry ────────────────────────────────────────────────────────
-    pallet_length: float = 130.0       # cm  (custom -pallet: 130 × 80)
-    pallet_width: float = 80.0          # cm
-    pallet_max_height: float = 227.0    # cm
-    pallet_max_weight: float = 600.0   # kg
+    # ── Géométrie de la palette ────────────────────────────────────────────────
+    pallet_length: float     = 130.0    # cm (palette standard 130 × 80)
+    pallet_width: float      = 80.0     # cm
+    pallet_max_height: float = 227.0   # cm (hauteur standard de transport)
+    pallet_max_weight: float = 600.0   # kg (limite de charge standard)
 
-    # ── Physics / stability ────────────────────────────────────────────────────
-    min_support_ratio: float = 0.80      # 75% of base area must be supported
-    stability_ratio: float = 7.0        # stack_height / min_base_dim < 7
+    # ── Physique / stabilité ───────────────────────────────────────────────────
+    min_support_ratio: float = 0.80    # 80% de la base doit être soutenue
+    stability_ratio: float   = 7.0    # hauteur / base_min doit rester < 7
 
-    # ── Ergonomics ─────────────────────────────────────────────────────────────
-    priority2_max_deposit_height: float = 160.0  # cm — max z for priority-2 box bottom
+    # ── Ergonomie ─────────────────────────────────────────────────────────────
+    priority2_max_deposit_height: float = 160.0  # cm — limite de dépôt manuel
 
-    # ── Multi-client strategy ──────────────────────────────────────────────────
-    # Phase 3 merging logic — full description in pallet_optimizer.py.  Summary:
-    #   ≤1 client or ≤1 pallet → skip
-    #   2 pallets              → merge if avg fill < min_filling_ratio
-    #   3..10 pallets          → merge 2 least if avg < min_filling_ratio,
-    #                            then feed least-filled mono into multi pool
-    #                            while (fill_mono + avg_fill_multi)/2 <
-    #                            min_filling_ratio  (also exits if pallet count
-    #                            stops decreasing)
-    #   11..70 pallets         → merge 2 least, then feed mono one at a time;
-    #                            stop when (multi/total > multi_client_minimum_ratio
-    #                            AND fill(least mono) > min_filling_ratio)
-    #                            OR multi/total > multi_client_maximum_ratio
-    #   >70 pallets            → loop: merge the 2 least-filled into the multi
-    #                            pool each iteration, same stop condition
-    enable_multi_client: bool = True     # set False to skip Phase 3 and Phase 4 entirely
-    multi_client_minimum_ratio: float = 0.12 # soft-stop lower bound (11+ pallets)
-    multi_client_maximum_ratio: float = 0.20 # hard-stop upper bound (11+ pallets)
-    min_filling_ratio: float = 0.40          # avg-fill threshold for the small-group regime
-                                             # (≤10 pallets); merge stops once the resulting
-                                             # average fill would reach this value
+    # ── Stratégie multi-client ─────────────────────────────────────────────────
+    enable_multi_client: bool          = True   # mettre False pour garder palettes mono
+    multi_client_minimum_ratio: float  = 0.12   # borne souple pour ≥11 palettes
+    multi_client_maximum_ratio: float  = 0.20   # borne dure pour ≥11 palettes
+    min_filling_ratio: float           = 0.40   # seuil de remplissage pour ≤10 palettes
 
-    # ── Post-processing ────────────────────────────────────────────────────────
-    enable_post_processing: bool = True      # set False to skip Phase 5 entirely
+    # ── Post-processing général ────────────────────────────────────────────────
+    enable_post_processing: bool = True   # mettre False pour sauter la Phase 5
 
-    # ── Cost function weights — LNS Mono ──────────────────────────────────────
-    # Primary goal: reduce pallet count.
-    # Secondary goal: minimise fill ratio on the least-filled pallet so it is
-    # a good candidate for merging with another client's pallet in Phase 3/4.
-    cost_mono_pallet_count: float = 500.0
-    cost_mono_last_pallet_filling: float = 400.0   # penalises high fill on least-filled pallet
+    # ── Fonction de coût — LNS mono ───────────────────────────────────────────
+    # Objectif principal : réduire le nombre de palettes.
+    # Objectif secondaire : garder la palette la moins remplie vraiment vide
+    # (bon candidat pour la fusion Phase 3/4).
+    cost_mono_pallet_count: float        = 500.0
+    cost_mono_last_pallet_filling: float = 400.0   # pénalise un taux élevé sur la palette la moins remplie
 
-    # ── Cost function weights — LNS Multi ─────────────────────────────────────
-    # Single goal: reduce pallet count.
-    # P2 repartition is handled by post_processing.py.
+    # ── Fonction de coût — LNS multi ──────────────────────────────────────────
+    # Objectif unique : réduire le nombre de palettes.
+    # La répartition P2 est gérée par post_processing.py.
     cost_multi_pallet_count: float = 10.0
 
-    # ── Large Neighbourhood Search — mono-client pass ─────────────────────────
-    lns_mono_time_per_pallet: float = 0.7 # seconds per pallet — total = group_size × value
-    lns_mono_small_box_volume: float = 590000.0  # cm³ — boxes below this volume are extracted from surviving pallets each iteration
-    lns_mono_repair_top_k: int = 3              # pick randomly from top-k valid positions (EP × orientation) during repair
-    lns_mono_iter_per_pallet: int = 30          # iterations per pallet — total cap = group_size × value
-    lns_mono_random_seed: int = 42
+    # ── LNS mono-client — budget et hyperparamètres ───────────────────────────
+    lns_mono_time_per_pallet: float  = 0.7       # secondes par palette
+    lns_mono_small_box_volume: float = 590000.0  # cm³ — seuil pour extraire les petites boîtes
+    lns_mono_repair_top_k: int       = 3         # top-k pour la perturbation
+    lns_mono_iter_per_pallet: int    = 30        # itérations par palette
+    lns_mono_random_seed: int        = 42        # graine reproductible
 
-    # ── Large Neighbourhood Search — multi-client pass ─────────────────────────
-    lns_multi_time_per_pallet: float = 0.5  # seconds per pallet — total = pool_size × value
-    lns_multi_iter_per_pallet: int = 20     # iterations per pallet — total cap = pool_size × value
-    lns_multi_random_seed: int = 42
-    lns_multi_destroy_ratio: float = 0.33        # fraction of least-filled pallets destroyed each iteration (at least 1)
-    lns_multi_repair_top_k: int   = 3             # pick randomly from top-k valid positions during repair
+    # ── LNS multi-client — budget et hyperparamètres ──────────────────────────
+    lns_multi_time_per_pallet: float = 0.5    # secondes par palette
+    lns_multi_iter_per_pallet: int   = 20     # itérations par palette
+    lns_multi_random_seed: int       = 42     # graine reproductible
+    lns_multi_destroy_ratio: float   = 0.33   # fraction de palettes détruites (au moins 2)
+    lns_multi_repair_top_k: int      = 3      # top-k pour la perturbation
 
-    # ── Post-processing LNS — budget ───────────────────────────────────────────
-    pp_time_per_pallet: float = 0.5  # seconds per pallet per group — total = group_size × value
-    pp_iter_per_pallet: int   = 20   # iterations per pallet per group; split 50/50 fill/P2 phase
-    pp_top_k:          int   = 2        # candidate pool for placement and donor/recip selection
-    pp_random_seed:    int   = 7        # reproducibility
+    # ── Post-processing — budget et hyperparamètres ───────────────────────────
+    pp_time_per_pallet: float = 0.5    # secondes par palette
+    pp_iter_per_pallet: int   = 20     # itérations totales (50% fill / 50% P2)
+    pp_top_k: int             = 2      # bassin de candidats pour placement et sélection
+    pp_random_seed: int       = 7      # graine reproductible
 
-    # ── Post-processing LNS — cost-function weights ────────────────────────────
-    pp_w_contact:   float = 10.0    # reward per cm² of P2→P1 vertical contact area
-    pp_w_fill:      float = 5.0     # penalty per unit of fill-ratio variance
-    pp_w_p2:        float = 5000.0  # penalty per unit of P2-count variance
-    pp_w_height:    float = 5.0     # penalty for mean height ratio (lower height = better)
-    pp_w_stability: float = 10.0    # penalty for worst stability ratio across group
+    # ── Post-processing — poids de la fonction de coût ────────────────────────
+    pp_w_contact: float   = 10.0    # récompense par cm² de contact P2→P1
+    pp_w_fill: float      = 5.0     # pénalité par unité de variance de remplissage
+    pp_w_p2: float        = 5000.0  # pénalité par unité de variance du nombre de P2
+    pp_w_height: float    = 5.0     # pénalité pour la hauteur moyenne normalisée
+    pp_w_stability: float = 10.0    # pénalité pour le pire ratio de stabilité
 
-    # ── Post-processing — centering ────────────────────────────────────────────
-    pp_center_min_shift: float = 5.0    # minimum shift (cm) to apply centering in X or Y
+    # ── Post-processing — centrage de la charge ────────────────────────────────
+    pp_center_min_shift: float = 5.0    # décalage minimal (cm) pour activer le centrage
 
     def __post_init__(self) -> None:
+        """
+        Validation automatique des paramètres à la création de l'objet.
+
+        __post_init__ est appelé automatiquement par la dataclass juste après
+        __init__. On l'utilise ici pour vérifier que toutes les valeurs sont
+        dans leurs plages valides et cohérentes entre elles.
+
+        Si un paramètre est invalide, on lève une ValueError avec une liste
+        de tous les problèmes trouvés (pas seulement le premier).
+        """
         errors: list[str] = []
-        for f in fields(self):
+
+        # Vérifie que chaque paramètre numérique est dans sa plage autorisée
+        for f in fields(self):   # fields() retourne la liste de tous les champs
             if f.name not in PARAM_BOUNDS:
-                continue
-            val = getattr(self, f.name)
+                continue   # ce champ n'a pas de borne définie (ex. booléens)
+            val = getattr(self, f.name)   # getattr = accès dynamique par nom
             lo, hi = PARAM_BOUNDS[f.name]
             if not (lo <= val <= hi):
                 errors.append(f"{f.name}={val!r}  (plage autorisée : [{lo}, {hi}])")
+
+        # Vérification spéciale : minimum doit être < maximum (cohérence)
         if self.multi_client_minimum_ratio >= self.multi_client_maximum_ratio:
             errors.append(
                 "multi_client_minimum_ratio doit être strictement inférieur à "
                 "multi_client_maximum_ratio"
             )
+
+        # Si des erreurs ont été trouvées, les affiche toutes d'un coup
         if errors:
             raise ValueError(
                 "Paramètres invalides :\n" + "\n".join(f"  • {e}" for e in errors)

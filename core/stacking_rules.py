@@ -1,22 +1,34 @@
 """
-Stacking-rule validation.
+Règles d'empilement par priorité.
 
-Rules (from the specification):
-    Priority 1 boxes may be placed on:
-        - the pallet floor (z == 0)
-        - another Priority 1 box
-        - any box surface marked as stackable
+Ce module implémente les règles métier qui définissent QUELS types de boîtes
+peuvent être posées SUR QUELS autres types.
 
-    Priority 2 boxes may be placed on:
-        - a Priority 1 box   } only when the lower box surface
-        - a Priority 2 box   } is marked as stackable
+Règles (issues du cahier des charges) :
+    Boîte priorité 1 peut être posée sur :
+        - Le sol de la palette (z == 0) → toujours autorisé
+        - Une autre boîte de priorité 1 → toujours autorisé
+        - N'importe quelle boîte dont la surface est marquée "stackable"
+          (empilable) → autorisé
 
-In both cases "placed on" means the bottom face of the new box
-exactly touches the top face of the supporting box.
+    Boîte priorité 2 peut être posée sur :
+        - Une boîte de priorité 1 marquée "stackable" → autorisé
+        - Une boîte de priorité 2 marquée "stackable" → autorisé
+        - JAMAIS sur une boîte marquée non empilable (stackable = False)
 
-Tolerance:
-    A small floating-point tolerance (FLOAT_TOL) is used when comparing
-    z coordinates to avoid issues with floating-point rounding.
+    Dans tous les cas :
+        « Posée sur » signifie que la face inférieure de la boîte du dessus
+        est exactement en contact avec la face supérieure du support.
+
+Distinction importante avec stability_check.py :
+    Ce module vérifie les RÈGLES (qui peut aller sur qui ?).
+    stability_check.py vérifie la PHYSIQUE (la surface de contact est-elle
+    suffisante ? La colonne est-elle trop haute ?).
+
+Tolerance flottante :
+    FLOAT_TOL = 1e-6 cm. Deux coordonnées Z différant de moins de 1 nanomètre
+    sont considérées comme identiques — nécessaire pour éviter les erreurs
+    d'arrondi des calculs en virgule flottante.
 """
 
 from typing import List
@@ -24,14 +36,18 @@ from typing import List
 from models.placed_box import PlacedBox
 from utils.geometry import xy_overlap
 
-# Floating-point tolerance for z-level comparisons (cm)
+# Tolérance pour les comparaisons de coordonnées Z (en cm)
 FLOAT_TOL = 1e-6
 
 
 def _is_directly_below(candidate_z: float, pb: PlacedBox) -> bool:
     """
-    Returns True if the top of pb is (approximately) at the given z level,
-    meaning pb could act as a direct support for a box placed at candidate_z.
+    Vérifie si le sommet de `pb` est exactement au niveau `candidate_z`.
+
+    Si oui, `pb` est un support direct potentiel pour une boîte dont la base
+    serait à l'altitude candidate_z.
+
+    Paramètre candidate_z : altitude du bas de la boîte candidate (cm).
     """
     return abs(pb.z_max - candidate_z) <= FLOAT_TOL
 
@@ -39,10 +55,15 @@ def _is_directly_below(candidate_z: float, pb: PlacedBox) -> bool:
 def _xy_overlaps_with(
     x: float, y: float, length: float, width: float, pb: PlacedBox
 ) -> bool:
-    """Returns True when the candidate footprint overlaps with pb in XY."""
+    """
+    Vérifie si l'empreinte XY de la boîte candidate chevauche celle de `pb`.
+
+    Utilise xy_overlap depuis utils/geometry.py (vérification stricte :
+    le simple contact bord-à-bord ne constitue pas un chevauchement).
+    """
     return xy_overlap(
-        x, y, x + length, y + width,
-        pb.x, pb.y, pb.x_max, pb.y_max
+        x, y, x + length, y + width,   # empreinte de la boîte candidate
+        pb.x, pb.y, pb.x_max, pb.y_max  # empreinte pré-calculée de pb
     )
 
 
@@ -52,23 +73,35 @@ def get_supporting_boxes(
     placed_boxes: List[PlacedBox]
 ) -> List[PlacedBox]:
     """
-    Returns all already-placed boxes whose top face is at z and whose
-    XY footprint overlaps with the candidate box footprint.
+    Retourne la liste de toutes les boîtes dont le sommet est exactement au
+    niveau z ET dont l'empreinte XY chevauche celle de la boîte candidate.
 
-    These are the boxes that would directly support the new box.
+    Ce sont les boîtes qui « porteraient physiquement » la boîte candidate
+    si on la posait à cette position.
+
+    Paramètres :
+        x, y           : coin bas-gauche de la boîte candidate (cm)
+        z              : altitude du bas de la boîte candidate (cm)
+        length, width  : dimensions XY de la boîte candidate (cm)
+        placed_boxes   : toutes les boîtes déjà sur la palette
+
+    Retourne une liste (potentiellement vide si aucun support n'est trouvé).
     """
     return [
         pb for pb in placed_boxes
-        if _is_directly_below(z, pb) and
-           _xy_overlaps_with(x, y, length, width, pb)
+        if _is_directly_below(z, pb) and              # sommet de pb = bas de candidate
+           _xy_overlaps_with(x, y, length, width, pb) # empreintes qui se chevauchent
     ]
 
 
 def can_place_on_floor(priority: int) -> bool:
     """
-    Any box (priority 1 or 2) may be placed directly on the pallet floor (z == 0).
+    Toute boîte (priorité 1 ou 2) peut être posée directement sur le sol de la palette.
+
+    Le sol est toujours stable et illimité en capacité de portance dans ce modèle.
+    Cette fonction existe pour documenter explicitement cette décision métier.
     """
-    return True  # No restriction for floor placement
+    return True   # aucune restriction pour le placement au sol
 
 
 def check_stacking_rules(
@@ -78,55 +111,63 @@ def check_stacking_rules(
     placed_boxes: List[PlacedBox]
 ) -> bool:
     """
-    Validates stacking rules for a box about to be placed at (x, y, z).
+    Valide les règles d'empilement pour une boîte candidate.
 
-    Returns True if the placement is allowed, False otherwise.
+    Retourne True si l'empilement est autorisé, False sinon.
 
-    Logic:
-        If z == 0: always allowed (floor placement).
+    Logique complète :
+        Si z == 0 (au sol) → toujours autorisé.
 
-        If z > 0: the box must rest on at least one supporting box.
-            For Priority 1: support must be from P1 boxes OR stackable surfaces.
-            For Priority 2: support must be from P1/P2 boxes that are stackable.
+        Si z > 0 (en hauteur) → doit reposer sur au moins une boîte support.
+            Pour priorité 1 :
+                - Sur une autre P1 : toujours OK (P1 peut porter P1)
+                - Sur une P2 stackable : OK
+                - Sur une P2 non stackable : REFUSÉ
+                → Toutes les boîtes supports dans l'empreinte doivent satisfaire
+                  l'une de ces conditions.
 
-    Note:
-        This function only checks the RULE, not the support RATIO
-        (minimum coverage area). That is handled by stability_check.py.
+            Pour priorité 2 :
+                - Toutes les boîtes support doivent être stackable (peu importe P1 ou P2)
+                - Si UNE SEULE n'est pas stackable → REFUSÉ
+
+    Attention :
+        Cette fonction vérifie uniquement la RÈGLE (qui peut aller sur qui).
+        Elle ne vérifie PAS :
+            - La surface de contact suffisante (→ check_support_ratio)
+            - La stabilité de la colonne (→ check_stack_stability)
+        Ces deux vérifications sont dans stability_check.py et appellées séparément.
     """
-    # Floor placement: always valid
+    # Cas au sol : toujours valide, aucun support requis
     if z <= FLOAT_TOL:
         return True
 
-    # Find supporting boxes (top face at z, overlapping in XY)
+    # Trouve les boîtes qui supporteraient physiquement la boîte candidate
     supports = get_supporting_boxes(x, y, z, length, width, placed_boxes)
 
-    # There must be at least one supporting box
+    # S'il n'y a aucun support et qu'on est en hauteur → physiquement impossible
     if not supports:
         return False
 
     if priority == 1:
-        # Priority 1 may rest on:
-        #   (a) another Priority 1 box (regardless of stackable flag)
-        #   (b) any box whose surface is marked stackable
-        # ALL supports in the footprint must satisfy one of these conditions —
-        # a single non-stackable P2 support is enough to reject the placement.
+        # Règle P1 : chaque boîte support doit être soit une P1, soit une P2 stackable.
+        # Un seul support non stackable de type P2 invalide l'ensemble du placement.
         for sup in supports:
             if sup.priority == 1:
-                continue            # (a) P1 on P1: always OK
+                continue            # P1 sur P1 : toujours permis → OK
             if sup.stackable:
-                continue            # (b) stackable surface: OK
-            return False            # non-stackable P2 surface: reject
+                continue            # surface stackable : OK
+            return False            # P2 non stackable : refus immédiat
 
-        return True
+        return True   # tous les supports sont valides
 
     elif priority == 2:
-        # Priority 2 may rest on P1 or P2, but EVERY supporting surface
-        # must be stackable — a single non-stackable support rejects the placement.
+        # Règle P2 : CHAQUE boîte support doit être stackable (P1 ou P2 poco importe).
+        # Un seul support non stackable → refus.
         for sup in supports:
             if not sup.stackable:
-                return False
+                return False   # surface fragile → refus immédiat
 
-        return True
+        return True   # tous les supports acceptent d'être empilés
 
-    # Unknown priority — reject to be safe
+    # Priorité inconnue (ne devrait pas arriver avec des données valides) → refus
     return False
