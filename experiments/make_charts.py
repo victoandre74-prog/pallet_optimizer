@@ -5,6 +5,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+from matplotlib.ticker import MultipleLocator
 from matplotlib.colors import Normalize
 import os
 
@@ -47,13 +48,41 @@ ax.scatter(arr(PAL, pareto), arr(RATIO, pareto)*100,
 pareto_s = sorted(pareto, key=lambda d: d[PAL])
 ax.plot([d[PAL] for d in pareto_s], [d[RATIO]*100 for d in pareto_s],
         c="#1565C0", lw=1.1, ls="--", zorder=2, alpha=0.6)
-knee = min(pareto, key=lambda d: abs(d[RATIO]*100 - 17) + abs(d[PAL]-3900)/50)
+knee = min(pareto, key=lambda d: abs(d[RATIO]*100 - 17.9) + abs(d[PAL]-3860)/50)
 ax.annotate(
-    f"Genou\n{int(knee[PAL])} pal / {knee[RATIO]*100:.1f}% MC",
+    f"Genou Pareto\n({int(knee[PAL])}, {knee[RATIO]*100:.1f}% MC)",
     xy=(knee[PAL], knee[RATIO]*100), fontsize=8.5, color="#1565C0",
     arrowprops=dict(arrowstyle="->", color="#1565C0", lw=1.1),
     xytext=(knee[PAL]+120, knee[RATIO]*100+4),
 )
+
+
+# Point de référence AC Système SL18
+x_ref, y_ref = 4243, 12.6
+
+ax.scatter(
+    x_ref, y_ref,
+    color="#FF9800",  # orange
+    s=70,
+    zorder=4,
+    edgecolors="black",
+    linewidths=0.6,
+    label="AC Système SL18"
+)
+ax.annotate(
+    "AC Système SL18\n(4243, 12.6 % MC)",
+    xy=(x_ref, y_ref),
+    xytext=(x_ref - 100, y_ref + 2.5),
+    fontsize=9,
+    color="#E65100",
+    arrowprops=dict(
+        arrowstyle="->",
+        color="#E65100",
+        lw=1.2
+    )
+)
+
+
 ax.set_xlabel("Palettes totales", fontsize=11)
 ax.set_ylabel("Taux multi-AR (%)", fontsize=11)
 ax.set_title(
@@ -62,6 +91,9 @@ ax.set_title(
 )
 ax.legend(fontsize=10)
 ax.grid(True, alpha=0.3)
+
+ax.xaxis.set_major_locator(MultipleLocator(50))
+
 fig1.tight_layout()
 fig1.savefig(os.path.join(_DIR, "sweep2_fig1_pareto.png"), dpi=150)
 plt.close(fig1)
