@@ -20,7 +20,7 @@ start docs\code_map.html         # Windows
 > Une connexion internet est donc nécessaire au premier affichage. Aucune
 > installation, aucun serveur : c'est une page HTML autonome.
 
-## Deux vues
+## Trois vues
 
 ### 1. Flux / Étapes (par défaut)
 Parcours pas-à-pas du pipeline d'optimisation (Phase 0 → Phase 6 → Sortie →
@@ -34,6 +34,19 @@ Graphe de dépendances complet : chaque nœud est un fichier Python, les flèche
 sont les imports inter-modules. Filtrez par **couche** (models, core, heuristics,
 visualization, …) et cliquez un nœud pour mettre en évidence ses dépendances et
 afficher le détail de ses fonctions.
+
+### 3. Documentation
+Le `README.md` complet du projet, rendu dans la page avec un **sommaire interactif**
+(navigation par section, surbrillance de la section courante au défilement, liens
+internes fonctionnels). Le contenu est un **instantané** embarqué dans la page (pour
+rester ouvrable en double-clic, sans serveur).
+
+> **Resynchroniser après modification du `README.md`** :
+> ```bash
+> python docs/build_doc.py
+> ```
+> Le script réinjecte le texte du README entre les marqueurs `README:START/END`
+> de `code_map.html`. Aucune autre partie de la page n'est touchée.
 
 ## Source des données
 
