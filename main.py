@@ -569,58 +569,6 @@ def _write_execution_summary(
     return summary_path
 
 
-def _write_manifest(output_dir: Path, results: list) -> None:
-    """
-    Met à jour output_dir/manifest.json avec les runs réussis de la session.
-
-    Le manifest est lu par le visualizer Three.js pour lister les résultats
-    disponibles sans scanner le dossier. Les entrées existantes sont conservées ;
-    les nouvelles remplacent les éventuels doublons (même csv_name).
-    """
-    import json
-    from datetime import datetime, timezone
-
-    manifest_path = output_dir / "manifest.json"
-
-    try:
-        if manifest_path.exists():
-            with open(manifest_path, "r", encoding="utf-8") as f:
-                manifest = json.load(f)
-        else:
-            manifest = {"schema_version": 1, "runs": []}
-    except Exception:
-        manifest = {"schema_version": 1, "runs": []}
-
-    existing = {r["results_file"]: r for r in manifest.get("runs", []) if "results_file" in r}
-
-    for result in results:
-        if result["status_code"] != "OK" or not result.get("csv_name"):
-            continue
-        kpi_rows     = result.get("kpi_rows", [])
-        pallet_count = len(kpi_rows)
-        box_count    = sum(r["n_boxes"] for r in kpi_rows)
-        avg_fill     = (round(sum(r["fill"] for r in kpi_rows) / pallet_count, 4)
-                        if pallet_count else 0.0)
-        existing[result["csv_name"]] = {
-            "stem":           result["stem"],
-            "results_file":   result["csv_name"],
-            "timestamp":      datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "status":         "OK",
-            "pallet_count":   pallet_count,
-            "box_count":      box_count,
-            "avg_fill_ratio": avg_fill,
-        }
-
-    manifest["last_updated"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    manifest["runs"]         = list(existing.values())
-
-    with open(manifest_path, "w", encoding="utf-8") as f:
-        json.dump(manifest, f, ensure_ascii=False, indent=2)
-
-    n_new = sum(1 for r in results if r["status_code"] == "OK" and r.get("csv_name"))
-    print(f"[Manifest] manifest.json mis à jour ({n_new} nouveau(x) run(s), "
-          f"{len(manifest['runs'])} total).")
-
 
 def main():
     """
@@ -745,12 +693,6 @@ def main():
                 print(f"[Excel] Rapport KPI écrit dans : {excel_path}")
         except Exception as e:
             print(f"[Excel] Avertissement : {e}")
-
-    # ── Manifest JSON (pour le futur visualizer Three.js) ─────────────────────
-    try:
-        _write_manifest(output_dir, results)
-    except Exception as e:
-        print(f"[Manifest] Avertissement : {e}")
 
     # Retourne un code de sortie non nul si au moins un fichier a échoué.
     # Utile pour les scripts d'automatisation (bash if, CI/CD, etc.).
