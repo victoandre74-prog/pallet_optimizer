@@ -387,6 +387,9 @@ Le système expose **deux applications web indépendantes** :
 
 Le bouton **🔭 Ouvrir le Visualiseur** démarre `visualization/visualizer.py` (port 8053) dans un sous-processus et ouvre automatiquement un onglet navigateur.
 
+![App 1 — Paramétrage & Exécution](docs/images/app1.png)
+*App 1 — Paramétrage & Exécution (`app.py`, port 8050)*
+
 #### App 2 — Visualiseur unifié (`visualization/visualizer.py`, port 8053)
 
 ```
@@ -404,6 +407,9 @@ Le bouton **🔭 Ouvrir le Visualiseur** démarre `visualization/visualizer.py` 
 └─────────────────────────────────────────────────────┘
 ```
 
+![App 2 — Visualiseur unifié](docs/images/app2.png)
+*App 2 — Visualiseur unifié (`visualization/visualizer.py`, port 8053)*
+
 Les quatre vues s'ouvrent dans de **nouveaux onglets** du navigateur :
 
 | Route | Vue | Description |
@@ -412,6 +418,15 @@ Les quatre vues s'ouvrent dans de **nouveaux onglets** du navigateur :
 | `/zoom` | Vue Zoom | Vue agrandie d'une seule palette avec slider de séquence de placement |
 | `/kpi` | Rapport KPI | Statistiques agrégées (accordéon par fichier) |
 | Export | Images PNG | Spawn `exporter.py` (one-shot) — une image par palette ou par étape |
+
+![Vue Multiple — grille de palettes 3D](docs/images/view_grid.png)
+*Vue Multiple (`/grid`) — grille paginée de palettes en 3D*
+
+![Vue Zoom — palette unique](docs/images/view_zoom.png)
+*Vue Zoom (`/zoom`) — palette agrandie avec slider de séquence de placement*
+
+![Rapport KPI](docs/images/view_kpi.png)
+*Rapport KPI (`/kpi`) — statistiques agrégées (accordéon par fichier)*
 
 > **Pourquoi deux apps séparées ?**  
 > `app.py` lance `main.py` comme sous-processus et lit son log en temps réel. Intégrer la visualisation dans le même processus créait des conflits de ports et rendait la vue zoom instable (callbacks partagés). La séparation garantit que chaque app reste légère et indépendante.

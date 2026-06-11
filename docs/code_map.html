@@ -82,6 +82,7 @@
   .md img{max-width:100%;height:auto;display:block;margin:14px 0;border:1px solid var(--border);border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.45)}
   .md p > img + em, .md img + em{display:block;text-align:center;color:var(--muted);font-size:12.5px;margin-top:-6px}
   .md em.broken-img{color:#f0883e}
+  .md .img-missing{border:1px dashed var(--border);border-radius:10px;padding:26px 18px;margin:14px 0;color:var(--muted);font-size:13px;text-align:center;background:repeating-linear-gradient(45deg,transparent,transparent 10px,rgba(255,255,255,.02) 10px,rgba(255,255,255,.02) 20px)}
   .md code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;background:var(--panel2);padding:1.5px 5px;border-radius:5px;border:1px solid var(--border)}
   .md pre{background:#0b0f15;border:1px solid var(--border);border-radius:10px;padding:14px 16px;overflow:auto}
   .md pre code{background:none;border:0;padding:0;font-size:12.5px;line-height:1.5}
@@ -487,6 +488,9 @@ Le système expose **deux applications web indépendantes** :
 
 Le bouton **🔭 Ouvrir le Visualiseur** démarre `visualization/visualizer.py` (port 8053) dans un sous-processus et ouvre automatiquement un onglet navigateur.
 
+![App 1 — Paramétrage & Exécution](docs/images/app1.png)
+*App 1 — Paramétrage & Exécution (`app.py`, port 8050)*
+
 #### App 2 — Visualiseur unifié (`visualization/visualizer.py`, port 8053)
 
 ```
@@ -504,6 +508,9 @@ Le bouton **🔭 Ouvrir le Visualiseur** démarre `visualization/visualizer.py` 
 └─────────────────────────────────────────────────────┘
 ```
 
+![App 2 — Visualiseur unifié](docs/images/app2.png)
+*App 2 — Visualiseur unifié (`visualization/visualizer.py`, port 8053)*
+
 Les quatre vues s'ouvrent dans de **nouveaux onglets** du navigateur :
 
 | Route | Vue | Description |
@@ -512,6 +519,15 @@ Les quatre vues s'ouvrent dans de **nouveaux onglets** du navigateur :
 | `/zoom` | Vue Zoom | Vue agrandie d'une seule palette avec slider de séquence de placement |
 | `/kpi` | Rapport KPI | Statistiques agrégées (accordéon par fichier) |
 | Export | Images PNG | Spawn `exporter.py` (one-shot) — une image par palette ou par étape |
+
+![Vue Multiple — grille de palettes 3D](docs/images/view_grid.png)
+*Vue Multiple (`/grid`) — grille paginée de palettes en 3D*
+
+![Vue Zoom — palette unique](docs/images/view_zoom.png)
+*Vue Zoom (`/zoom`) — palette agrandie avec slider de séquence de placement*
+
+![Rapport KPI](docs/images/view_kpi.png)
+*Rapport KPI (`/kpi`) — statistiques agrégées (accordéon par fichier)*
 
 > **Pourquoi deux apps séparées ?**  
 > `app.py` lance `main.py` comme sous-processus et lit son log en temps réel. Intégrer la visualisation dans le même processus créait des conflits de ports et rendait la vue zoom instable (callbacks partagés). La séparation garantit que chaque app reste légère et indépendante.
@@ -1851,6 +1867,13 @@ function DocView(){
       const s = img.getAttribute('src') || '';
       if(s.startsWith('docs/')) img.setAttribute('src', s.slice(5));
       else if(s.startsWith('./docs/')) img.setAttribute('src', s.slice(7));
+      // Image absente → placeholder propre (au lieu de l'icône « image cassée »).
+      img.addEventListener('error', ()=>{
+        const ph = document.createElement('div');
+        ph.className = 'img-missing';
+        ph.textContent = '🖼  Capture à venir — déposez ' + (img.getAttribute('src')||'') + ' dans docs/images/';
+        if(img.parentNode) img.replaceWith(ph);
+      });
     });
     headingsRef.current = hs;
     setToc(t);
