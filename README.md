@@ -120,10 +120,10 @@ pallet_optimizer/
 **Architecture applicative — deux processus distincts :**
 
 ```
-app.py (port 8050)                     visualization/visualizer.py (port 8053)
+app.py (port 8050)                       visualization/visualizer.py (port 8053)
   Section 1 — Paramétrage                Page /          → Sélection dossier + CSV
   Section 2 — Exécution batch                              + bouton Valider
-  [🔭 Ouvrir le Visualiseur]  ──spawn──► Page /grid      → Vue grille paginée
+                                          Page /grid      → Vue grille paginée
                                           Page /zoom      → Vue zoom + slider séquence
                                           Page /kpi       → Rapport KPI
                                           Export images   → spawn exporter.py (one-shot)
