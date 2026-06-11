@@ -370,44 +370,14 @@ Le système expose **deux applications web indépendantes** :
 
 #### App 1 — Paramétrage & Exécution (`app.py`, port 8050)
 
-```
-┌─────────────────────────────────────────────────────┐
-│  Logo              Pallet Optimizer             Logo │
-├─────────────────────────────────────────────────────┤
-│  ▼  1 — Paramétrage                                  │
-│     [Dossier entrée] [Dossier sortie]               │
-│     [Toggles multi-client / post-traitement]        │
-│     [Grille de paramètres pliable]                  │
-├─────────────────────────────────────────────────────┤
-│  ▼  2 — Exécution                                    │
-│     [▶ Lancer l'exécution]   [Console batch]        │
-│     [🔭 Ouvrir le Visualiseur]                      │
-└─────────────────────────────────────────────────────┘
-```
-
 Le bouton **🔭 Ouvrir le Visualiseur** démarre `visualization/visualizer.py` (port 8053) dans un sous-processus et ouvre automatiquement un onglet navigateur.
 
-![App 1 — Paramétrage & Exécution](docs/images/app1.png)
+![App 1 — Paramétrage & Exécution](docs/images/App1.png)
 *App 1 — Paramétrage & Exécution (`app.py`, port 8050)*
 
 #### App 2 — Visualiseur unifié (`visualization/visualizer.py`, port 8053)
 
-```
-┌─────────────────────────────────────────────────────┐
-│  Logo              Pallet Visualizer            Logo │
-├─────────────────────────────────────────────────────┤
-│  Page principale (/)                                 │
-│  [Dossier output]  [Fichier CSV ▼]                  │
-│  [✅ Valider et charger]                             │
-│                                                      │
-│  ┌──────────┬──────────┬──────────┬──────────┐      │
-│  │ 🗂 Vue   │ 🔍 Vue  │ 📊 KPI  │ 🖼 Export│      │
-│  │ Multiple │  Zoom   │ Rapport │ Images   │      │
-│  └──────────┴──────────┴──────────┴──────────┘      │
-└─────────────────────────────────────────────────────┘
-```
-
-![App 2 — Visualiseur unifié](docs/images/app2.png)
+![App 2 — Visualiseur unifié](docs/images/App2.png)
 *App 2 — Visualiseur unifié (`visualization/visualizer.py`, port 8053)*
 
 Les quatre vues s'ouvrent dans de **nouveaux onglets** du navigateur :
