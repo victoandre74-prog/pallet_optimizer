@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Pallet Optimizer — Carte interactive du code</title>
+<title>Pallet_Optimizer - Documentation</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reactflow@11.11.4/dist/style.css" />
 <style>
   :root{
@@ -71,7 +71,7 @@
   .toc a.h3{padding-left:26px;font-size:12.5px}
   .toc a.active{color:var(--accent);background:rgba(88,166,255,.12);border-left-color:var(--accent)}
   .docscroll{flex:1;overflow:auto;scroll-behavior:smooth}
-  .md{max-width:900px;margin:0 auto;padding:28px 44px 120px;color:var(--text)}
+  .md{max-width:none;margin:0;padding:28px 48px 120px;color:var(--text)}
   .md h1{font-size:26px;border-bottom:1px solid var(--border);padding-bottom:10px;margin-top:8px}
   .md h2{font-size:21px;border-bottom:1px solid var(--border);padding-bottom:6px;margin-top:38px}
   .md h3{font-size:17px;margin-top:28px;color:#cdd9e5}
@@ -1875,7 +1875,7 @@ const COL_W = 270, ROW_H = 116;
 function layerModules(layer){ return Object.keys(MODULES).filter(k=>MODULES[k].layer===layer); }
 
 function App(){
-  const [mode, setMode] = useState('pipeline');     // 'pipeline' | 'architecture'
+  const [mode, setMode] = useState('doc');     // 'doc' | 'pipeline' | 'architecture'
   const [step, setStep] = useState(0);
   const [sel, setSel] = useState(null);             // module id sélectionné
   const [hiddenLayers, setHiddenLayers] = useState(()=>new Set());
@@ -1955,13 +1955,13 @@ function App(){
 
   return html`<div class="app">
     <header>
-      <div><h1>Pallet Optimizer — Carte interactive du code</h1>
-        <div class="sub">Quelles fonctions / modèles, pour quoi faire, dans quel fichier</div></div>
+      <div><h1>Pallet_Optimizer - Documentation</h1>
+        <div class="sub">Documentation, flux d'optimisation et architecture du code</div></div>
       <div class="spacer"></div>
       <div class="seg">
+        <button class=${mode==='doc'?'on':''} onClick=${()=>{setMode('doc');setSel(null);}}>Documentation</button>
         <button class=${mode==='pipeline'?'on':''} onClick=${()=>{setMode('pipeline');setSel(null);}}>Flux / Étapes</button>
         <button class=${mode==='architecture'?'on':''} onClick=${()=>{setMode('architecture');setSel(null);}}>Architecture</button>
-        <button class=${mode==='doc'?'on':''} onClick=${()=>{setMode('doc');setSel(null);}}>Documentation</button>
       </div>
     </header>
     ${mode==='doc' ? html`<div class="body"><${DocView}/></div>` : html`<div class="body">
