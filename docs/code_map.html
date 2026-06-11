@@ -79,6 +79,9 @@
   .md :is(h1,h2,h3,h4){scroll-margin-top:16px}
   .md p,.md li{font-size:14px;line-height:1.65}
   .md a{color:var(--accent)}
+  .md img{max-width:100%;height:auto;display:block;margin:14px 0;border:1px solid var(--border);border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.45)}
+  .md p > img + em, .md img + em{display:block;text-align:center;color:var(--muted);font-size:12.5px;margin-top:-6px}
+  .md em.broken-img{color:#f0883e}
   .md code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;background:var(--panel2);padding:1.5px 5px;border-radius:5px;border:1px solid var(--border)}
   .md pre{background:#0b0f15;border:1px solid var(--border);border-radius:10px;padding:14px 16px;overflow:auto}
   .md pre code{background:none;border:0;padding:0;font-size:12.5px;line-height:1.5}
@@ -1842,6 +1845,13 @@ function DocView(){
     const t = hs.map(h=>{ const id = slug(h.textContent); h.id = id;
       return { id, text:h.textContent, level: h.tagName==='H3'?3:2 }; });
     art.querySelectorAll('a[href^="http"]').forEach(a=>{ a.target='_blank'; a.rel='noopener'; });
+    // Le README (racine) référence les images en "docs/images/…" pour fonctionner sur
+    // GitHub ; ici la page vit déjà dans docs/, on retire donc le préfixe "docs/".
+    art.querySelectorAll('img').forEach(img=>{
+      const s = img.getAttribute('src') || '';
+      if(s.startsWith('docs/')) img.setAttribute('src', s.slice(5));
+      else if(s.startsWith('./docs/')) img.setAttribute('src', s.slice(7));
+    });
     headingsRef.current = hs;
     setToc(t);
     setActive(t.length ? t[0].id : null);
