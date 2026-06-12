@@ -13,9 +13,12 @@ import os
 
 # Add the pallet_optimizer package directory to sys.path so tests can import
 # models, core, config, heuristics, utils directly.
-_PKG = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _PKG not in sys.path:
-    sys.path.insert(0, _PKG)
+_TESTS = os.path.dirname(os.path.abspath(__file__))
+_ROOT  = os.path.dirname(_TESTS)
+_SRC   = os.path.join(_ROOT, "src")
+for _p in (_SRC, _ROOT):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 import pytest
 

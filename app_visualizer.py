@@ -18,14 +18,14 @@ import subprocess
 import threading
 import uuid
 
-_DIR  = os.path.dirname(os.path.abspath(__file__))
-_ROOT = os.path.dirname(_DIR)
-if _ROOT not in sys.path:
-    sys.path.insert(0, _ROOT)
+_DIR = os.path.dirname(os.path.abspath(__file__))
+_SRC = os.path.join(_DIR, "src")
+if _SRC not in sys.path:
+    sys.path.insert(0, _SRC)
 
 
 def _load_logo(filename: str) -> str:
-    path = os.path.join(_ROOT, filename)
+    path = os.path.join(_DIR, "assets", filename)
     if not os.path.exists(path):
         return ""
     ext  = filename.rsplit(".", 1)[-1].lower()
@@ -683,7 +683,7 @@ def build_app() -> dash.Dash:
             return dash.no_update, True, {"display": "none"}, ""
         img_dir = os.path.join(output_dir or os.path.dirname(csv_path), "pallet_images")
         os.makedirs(img_dir, exist_ok=True)
-        cmd = [sys.executable, os.path.join(_DIR, "exporter.py"), csv_path, img_dir]
+        cmd = [sys.executable, os.path.join(_SRC, "visualization", "exporter.py"), csv_path, img_dir]
         creation_flags = subprocess.CREATE_NEW_CONSOLE if sys.platform == "win32" else 0
         proc = subprocess.Popen(cmd, creationflags=creation_flags)
         eid  = str(uuid.uuid4())

@@ -35,10 +35,11 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 # ── Path setup ─────────────────────────────────────────────────────────────────
-_DIR  = os.path.dirname(os.path.abspath(__file__))
-_BASE = os.path.dirname(_DIR)
-if _BASE not in sys.path:
-    sys.path.insert(0, _BASE)
+_DIR  = os.path.dirname(os.path.abspath(__file__))            # .../pallet_optimizer/dev/experiments/
+_ROOT = os.path.dirname(os.path.dirname(_DIR))                 # .../pallet_optimizer/ (git root)
+_SRC  = os.path.join(_ROOT, "src")
+if _SRC not in sys.path:
+    sys.path.insert(0, _SRC)
 
 from config.parameters import OptimizationParameters
 from file_io.csv_reader import read_boxes_from_csv
@@ -51,7 +52,7 @@ from datetime import datetime
 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 # ── Config ─────────────────────────────────────────────────────────────────────
-INPUT_DIR = os.path.join(_BASE, r"input\SL18in")
+INPUT_DIR = os.path.join(_ROOT, "dev", "data", "input", "SL18in")
 CSV_OUT   = os.path.join(_DIR, f"sweep2_results_sl18_{ts}.csv")
 XLSX_OUT  = os.path.join(_DIR, f"sweep2_results_sl18_{ts}.xlsx")
 

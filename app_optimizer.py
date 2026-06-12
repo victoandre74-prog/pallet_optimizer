@@ -19,14 +19,15 @@ from dataclasses import asdict
 from pathlib import Path
 
 _DIR = os.path.dirname(os.path.abspath(__file__))
-if _DIR not in sys.path:
-    sys.path.insert(0, _DIR)
+_SRC = os.path.join(_DIR, "src")
+if _SRC not in sys.path:
+    sys.path.insert(0, _SRC)
 
 from config.parameters import OptimizationParameters, PARAM_BOUNDS
 
 
 def _load_logo(filename: str) -> str:
-    path = os.path.join(_DIR, filename)
+    path = os.path.join(_DIR, "assets", filename)
     if not os.path.exists(path):
         return ""
     ext  = filename.rsplit(".", 1)[-1].lower()
@@ -37,8 +38,6 @@ def _load_logo(filename: str) -> str:
 
 _LOGO_FOURNIER = _load_logo("logo_fournier.png")
 _LOGO_U4LOG    = _load_logo("logo_u4log.jpg")
-if _DIR not in sys.path:
-    sys.path.insert(0, _DIR)
 
 import dash
 from dash import dcc, html, Input, Output, State, ctx

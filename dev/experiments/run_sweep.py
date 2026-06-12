@@ -27,10 +27,11 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 # ── Path setup ────────────────────────────────────────────────────────────────
-_DIR  = os.path.dirname(os.path.abspath(__file__))   # .../pallet_optimizer/experiments/
-_BASE = os.path.dirname(_DIR)                         # .../pallet_optimizer/
-if _BASE not in sys.path:
-    sys.path.insert(0, _BASE)
+_DIR  = os.path.dirname(os.path.abspath(__file__))            # .../pallet_optimizer/dev/experiments/
+_ROOT = os.path.dirname(os.path.dirname(_DIR))                 # .../pallet_optimizer/ (git root)
+_SRC  = os.path.join(_ROOT, "src")
+if _SRC not in sys.path:
+    sys.path.insert(0, _SRC)
 
 import re
 import csv
@@ -41,7 +42,7 @@ from optimizer.pallet_optimizer import optimize_palletization
 from heuristics.post_processing import postprocess
 
 # ── Input ─────────────────────────────────────────────────────────────────────
-INPUT_DIR    = os.path.join(_BASE, r"input\SL18in")
+INPUT_DIR    = os.path.join(_ROOT, "dev", "data", "input", "SL18in")
 CSV_OUT      = os.path.join(_DIR, "sweep_results.csv")
 XLSX_OUT     = os.path.join(_DIR, "sweep_results.xlsx")
 N_WORKERS    = 4   # configs tournées en parallèle

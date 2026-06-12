@@ -19,10 +19,10 @@ import sys
 import os
 
 # ── Path setup ────────────────────────────────────────────────────────────────
-_DIR  = os.path.dirname(os.path.abspath(__file__))   # .../pallet_optimizer/profiling/
-_BASE = os.path.dirname(_DIR)                         # .../pallet_optimizer/
-if _BASE not in sys.path:
-    sys.path.insert(0, _BASE)
+_DIR  = os.path.dirname(os.path.abspath(__file__))            # .../pallet_optimizer/dev/profiling/
+_SRC  = os.path.join(os.path.dirname(os.path.dirname(_DIR)), "src")  # .../pallet_optimizer/src/
+if _SRC not in sys.path:
+    sys.path.insert(0, _SRC)
 
 from config.parameters import OptimizationParameters
 from file_io.csv_reader import read_boxes_from_csv

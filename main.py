@@ -52,8 +52,9 @@ if hasattr(sys.stderr, "reconfigure"):
 # Ajoute le répertoire du fichier courant au sys.path pour permettre les imports
 # relatifs depuis les sous-modules (config/, models/, etc.).
 _DIR = os.path.dirname(os.path.abspath(__file__))
-if _DIR not in sys.path:
-    sys.path.insert(0, _DIR)
+_SRC = os.path.join(_DIR, "src")
+if _SRC not in sys.path:
+    sys.path.insert(0, _SRC)
 
 from config.parameters import OptimizationParameters
 
