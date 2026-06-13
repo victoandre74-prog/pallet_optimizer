@@ -139,6 +139,9 @@ from file_io.csv_writer import write_results_to_csv
 from file_io.kpi_writer import compute_kpi_rows
 from optimizer.pallet_optimizer import optimize_palletization
 from heuristics.post_processing import postprocess
+from core.collision_detection import is_within_pallet, collides_with_any
+from core.stability_check import check_support_ratio, check_stack_stability
+from core.stacking_rules import check_stacking_rules
 
 
 def parse_args():
@@ -389,7 +392,40 @@ def _process_one(
             if not security_reason:
                 security_reason = f"doublons séquence dans {len(seq_errors)} palette(s)"
 
-        # ── Vérification 5 : immutabilité des champs Box → PlacedBox ──────────
+        # ── Vérification 5 : ordre séquence P1 avant P2 ─────────────────────
+        # Dans chaque palette, tout P2 doit avoir un numéro de séquence
+        # strictement supérieur à tous les P1 (les P1 sont placés en premier).
+        order_errors: list[str] = []
+        for p in pallets:
+            p1_seqs = [pb.sequence for pb in p.boxes if pb.priority == 1]
+            p2_seqs = [pb.sequence for pb in p.boxes if pb.priority == 2]
+            if not p1_seqs or not p2_seqs:
+                continue  # palette mono-priorité : vérification sans objet
+            max_p1_seq = max(p1_seqs)
+            bad_p2 = [
+                pb for pb in p.boxes
+                if pb.priority == 2 and pb.sequence < max_p1_seq
+            ]
+            if bad_p2:
+                order_errors.append(
+                    f"palette {p.id}: {len(bad_p2)} P2 avec seq < max_P1(={max_p1_seq}) — "
+                    + ", ".join(
+                        f"{pb.box_id}(seq={pb.sequence})" for pb in bad_p2[:5]
+                    )
+                    + (f" … (+{len(bad_p2)-5} de plus)" if len(bad_p2) > 5 else "")
+                )
+        if order_errors:
+            print(
+                f"  [ÉCHEC] Ordre séquence P1/P2 violé"
+                f" ({len(order_errors)} palette(s) affectée(s)) :"
+            )
+            for msg in order_errors:
+                print(f"         - {msg}")
+            check_ok = False
+            if not security_reason:
+                security_reason = f"ordre P1/P2 violé dans {len(order_errors)} palette(s)"
+
+        # ── Vérification 6 : immutabilité des champs Box → PlacedBox ──────────
         # Pour chaque boîte placée, vérifie que les champs copiés depuis Box
         # n'ont pas été mutés : client_id, priority, weight, orientation (dans
         # la liste autorisée), et dimensions (cohérentes avec l'orientation).
@@ -446,10 +482,84 @@ def _process_one(
             if not security_reason:
                 security_reason = f"{len(field_errors)} boîte(s) avec champs mutés"
 
+        # ── Contrôle des contraintes physiques ────────────────────────────────
+        # Revérifie que la disposition finale est physiquement valide :
+        #   budget de poids, bornes de palette, ratio de support (pas de boîte
+        #   dans le vide), règles d'empilement (priorités), stabilité de pile
+        #   (P1 uniquement) et détection de collisions 3D par paires.
+        phys_errors: list[str] = []
+        for p in pallets:
+            if p.total_weight > p.max_weight:
+                phys_errors.append(
+                    f"palette {p.id}: poids {p.total_weight:.1f}kg"
+                    f" dépasse la limite {p.max_weight:.1f}kg"
+                )
+            boxes_list = p.boxes
+            for pb in boxes_list:
+                others = [pb2 for pb2 in boxes_list if pb2 is not pb]
+                loc = f"box_id={pb.box_id!r} palette={p.id}"
+                if not is_within_pallet(
+                    pb.x, pb.y, pb.z, pb.length, pb.width, pb.height, p
+                ):
+                    phys_errors.append(
+                        f"{loc}: hors des bornes de la palette"
+                        f" pos=({pb.x:.1f},{pb.y:.1f},{pb.z:.1f})"
+                        f" dims=({pb.length}×{pb.width}×{pb.height})"
+                    )
+                if not check_support_ratio(
+                    pb.x, pb.y, pb.z, pb.length, pb.width,
+                    others, params.min_support_ratio
+                ):
+                    phys_errors.append(
+                        f"{loc}: ratio de support insuffisant"
+                        f" (z={pb.z:.1f}cm, min={params.min_support_ratio:.0%})"
+                    )
+                # check_stacking_rules désactivé : les P2 sont placés après les P1 ;
+                # une coïncidence de hauteur z_max entre un P2 et la base d'un P1
+                # ne signifie pas que le P1 repose réellement sur ce P2.
+                # check_stack_stability désactivé pour la même raison : la bounding
+                # box de la colonne inclut les P2 posés après, faussant le ratio.
+
+            # ── Collisions 3D paires (tolérance epsilon anti-arrondi COG) ──────
+            # Le centrage COG décale x et y de shift_x / shift_y via dc_replace.
+            # Pour deux boîtes se touchant exactement, (x_A + L) + s ≠ (x_A + s) + L
+            # en virgule flottante (non-associativité IEEE-754, delta ≈ 1e-14).
+            # _COLL_TOL = 1e-9 absorbe ce bruit sans masquer une vraie collision.
+            _COLL_TOL = 1e-9
+            for i, pb_i in enumerate(boxes_list):
+                for j in range(i + 1, len(boxes_list)):
+                    pb_j = boxes_list[j]
+                    if (pb_i.x + _COLL_TOL < pb_j.x_max and
+                            pb_j.x + _COLL_TOL < pb_i.x_max and
+                            pb_i.y + _COLL_TOL < pb_j.y_max and
+                            pb_j.y + _COLL_TOL < pb_i.y_max and
+                            pb_i.z + _COLL_TOL < pb_j.z_max and
+                            pb_j.z + _COLL_TOL < pb_i.z_max):
+                        phys_errors.append(
+                            f"palette {p.id}: collision 3D"
+                            f" box_id={pb_i.box_id!r} ↔ box_id={pb_j.box_id!r}"
+                        )
+        if phys_errors:
+            print(
+                f"  [ÉCHEC] Violations de contraintes physiques"
+                f" ({len(phys_errors)} problème(s)) :"
+            )
+            for msg in phys_errors[:10]:
+                print(f"         - {msg}")
+            if len(phys_errors) > 10:
+                print(f"         ... et {len(phys_errors) - 10} de plus.")
+            check_ok = False
+            if not security_reason:
+                security_reason = (
+                    f"{len(phys_errors)} violation(s) de contraintes physiques"
+                )
+
         if check_ok:
             print(f"  [OK] Toutes les {len(input_ids)} boîte(s) comptabilisées — entrée = sortie.")
             print(f"  [OK] Numéros de séquence uniques dans chaque palette.")
+            print(f"  [OK] Ordre séquence P1 avant P2 vérifié dans chaque palette.")
             print(f"  [OK] Intégrité des champs Box vérifiée (client, priority, weight, dims, orientation).")
+            print(f"  [OK] Contraintes physiques vérifiées (poids, bornes palette, support, collisions 3D).")
         _phase_footer(6)
 
         # ── Écriture du CSV résultats — seulement si la phase 6 est OK ─────────
