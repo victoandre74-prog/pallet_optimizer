@@ -116,24 +116,24 @@ lecture.
 - **Recommandation** : normaliser les clés dans `read_boxes_from_csv` exactement comme
   `validate_csv` (ligne 170), ou factoriser une fonction de normalisation partagée.
 
-### M2 — La Phase 6 ne revérifie pas la validité physique de la solution
-**Fichier** : `main.py:328-452`.
+~~### M2 — La Phase 6 ne revérifie pas la validité physique de la solution~~
+~~**Fichier** : `main.py:328-452`.~~
 
-La Phase 6 contrôle la **conservation** des colis (comptage, manquants, surnuméraires),
-l'**unicité des séquences** et l'**immutabilité des champs** (client_id, priority,
-weight, orientation ∈ autorisées, dims cohérentes avec l'orientation). Elle **ne
-revérifie pas** que la disposition finale est physiquement valide : pas de re-contrôle
-des collisions 3D, du budget de poids, du ratio de support ni de la stabilité.
+~~La Phase 6 contrôle la **conservation** des colis (comptage, manquants, surnuméraires),~~
+~~l'**unicité des séquences** et l'**immutabilité des champs** (client_id, priority,~~
+~~weight, orientation ∈ autorisées, dims cohérentes avec l'orientation). Elle **ne~~
+~~revérifie pas** que la disposition finale est physiquement valide : pas de re-contrôle~~
+~~des collisions 3D, du budget de poids, du ratio de support ni de la stabilité.~~
 
-- **Nuance importante** : ce n'est **pas** une contradiction avec le README — le tableau
-  §6.7 ne promet que ces contrôles-là. C'est un **manque de défense en profondeur** : un
-  bug introduit dans une phase 1-5 (chevauchement, dépassement de poids) passerait la
-  Phase 6 et serait écrit puis visualisé.
-- **Impact** : palettes physiquement invalides potentiellement livrées sans alerte.
-- **Statut** : vérifié.
-- **Recommandation** : ajouter un contrôle géométrique final optionnel (re-jouer
-  `is_valid_placement` / détection de collisions par palette) avant écriture, au moins
-  en mode strict / CI.
+~~- **Nuance importante** : ce n'est **pas** une contradiction avec le README — le tableau~~
+~~  §6.7 ne promet que ces contrôles-là. C'est un **manque de défense en profondeur** : un~~
+~~  bug introduit dans une phase 1-5 (chevauchement, dépassement de poids) passerait la~~
+~~  Phase 6 et serait écrit puis visualisé.~~
+~~- **Impact** : palettes physiquement invalides potentiellement livrées sans alerte.~~
+~~- **Statut** : vérifié.~~
+~~- **Recommandation** : ajouter un contrôle géométrique final optionnel (re-jouer~~
+~~  `is_valid_placement` / détection de collisions par palette) avant écriture, au moins~~
+~~  en mode strict / CI.~~
 
 ### M3 — Sous-processus : pas de nettoyage ni de timeout
 **Fichiers** : `app.py` (`_runs`, `:47`,`:974`, callback de polling ~`:1012`),

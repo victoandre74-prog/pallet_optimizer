@@ -166,8 +166,9 @@ def validate_csv(filepath: str, pallet_max_height: float = None) -> List[str]:
     seen_ids: set = set()   # pour détecter les doublons d'ID
 
     for row_num, row in enumerate(reader, start=2):   # start=2 : ligne 1 = en-tête
-        # Nettoie les clés et valeurs (supprime les espaces superflus)
-        row    = {k.strip(): v.strip() if v else "" for k, v in row.items() if k}
+        # Normalise les clés : strip + lower (même traitement que la vérif. des colonnes
+        # ligne 159, pour couvrir les espaces et majuscules parasites, ex. " Priority")
+        row    = {k.strip().lower(): v.strip() if v else "" for k, v in row.items() if k}
         prefix = f"Ligne {row_num}"
 
         # ── Colonne 'id' ──────────────────────────────────────────────────────
@@ -269,6 +270,8 @@ def read_boxes_from_csv(filepath: str) -> List[Box]:
         reader = csv.DictReader(f, delimiter=";")
         for row_num, row in enumerate(reader, start=2):
             try:
+                # Normalise les clés : strip + lower (aligne sur validate_csv ligne 170)
+                row = {k.strip().lower(): v.strip() if v else "" for k, v in row.items() if k}
                 # Convertit les orientations texte → liste d'objets Orientation
                 allowed   = _parse_orientations(row["allowed_orientations"])
                 # Convertit le flag texte → dictionnaire { Orientation → bool }
