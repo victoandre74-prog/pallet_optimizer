@@ -1,4 +1,4 @@
-"""
+﻿"""
 Unit tests for models/orientation.py
 
 Tests cover:
@@ -9,7 +9,7 @@ Tests cover:
 """
 
 import pytest
-from models.orientation import Orientation, ALL_ORIENTATIONS, get_oriented_dimensions
+from pallet_optimizer.models.orientation import Orientation, ALL_ORIENTATIONS, get_oriented_dimensions
 
 
 # ── Real-world box dimensions from tournee_type2026.csv ───────────────────────

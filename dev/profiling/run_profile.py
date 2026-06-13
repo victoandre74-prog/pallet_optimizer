@@ -1,4 +1,4 @@
-"""
+﻿"""
 run_profile.py — Profiling cProfile du pipeline pallet_optimizer.
 
 Usage :
@@ -20,14 +20,11 @@ import os
 
 # ── Path setup ────────────────────────────────────────────────────────────────
 _DIR  = os.path.dirname(os.path.abspath(__file__))            # .../pallet_optimizer/dev/profiling/
-_SRC  = os.path.join(os.path.dirname(os.path.dirname(_DIR)), "src")  # .../pallet_optimizer/src/
-if _SRC not in sys.path:
-    sys.path.insert(0, _SRC)
 
-from config.parameters import OptimizationParameters
-from file_io.csv_reader import read_boxes_from_csv
-from optimizer.pallet_optimizer import optimize_palletization
-from heuristics.post_processing import postprocess
+from pallet_optimizer.config.parameters import OptimizationParameters
+from pallet_optimizer.file_io.csv_reader import read_boxes_from_csv
+from pallet_optimizer.optimizer.pallet_optimizer import optimize_palletization
+from pallet_optimizer.heuristics.post_processing import postprocess
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 INPUT_DIR   = os.path.join(_BASE, r"input\tournee_type2026\SL18in")

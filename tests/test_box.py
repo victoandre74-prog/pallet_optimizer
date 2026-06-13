@@ -1,4 +1,4 @@
-"""
+﻿"""
 Unit tests for models/box.py
 
 Tests cover:
@@ -11,8 +11,8 @@ Tests cover:
 """
 
 import pytest
-from models.orientation import Orientation, ALL_ORIENTATIONS
-from models.box import Box
+from pallet_optimizer.models.orientation import Orientation, ALL_ORIENTATIONS
+from pallet_optimizer.models.box import Box
 from tests.conftest import make_box
 
 

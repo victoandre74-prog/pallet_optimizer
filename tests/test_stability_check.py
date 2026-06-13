@@ -1,4 +1,4 @@
-"""
+﻿"""
 Unit tests for core/stability_check.py
 
 Tests cover:
@@ -9,7 +9,7 @@ Tests cover:
 """
 
 import pytest
-from core.stability_check import (
+from pallet_optimizer.core.stability_check import (
     compute_support_area,
     check_support_ratio,
     check_stack_stability,

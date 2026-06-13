@@ -1,4 +1,4 @@
-"""
+﻿"""
 app.py — Interface Dash centralisée pour Pallet Optimizer.
 
 Deux sections :
@@ -15,15 +15,14 @@ import json
 import uuid
 import base64
 import subprocess
+import time
+import atexit
 from dataclasses import asdict
 from pathlib import Path
 
 _DIR = os.path.dirname(os.path.abspath(__file__))
-_SRC = os.path.join(_DIR, "src")
-if _SRC not in sys.path:
-    sys.path.insert(0, _SRC)
 
-from config.parameters import OptimizationParameters, PARAM_BOUNDS
+from pallet_optimizer.config.parameters import OptimizationParameters, PARAM_BOUNDS
 
 
 def _load_logo(filename: str) -> str:
@@ -96,6 +95,31 @@ def _read_batch_status(log_path: Path) -> str:
             code = rest.split()[0].split('"')[0] if rest else ""
             return code
     return ""
+
+
+def _count_csv_rows(path: Path) -> int:
+    """Retourne le nombre de lignes de données d'un CSV (hors en-tête).
+
+    Lecture en mode texte brut — pas de parsing CSV. Négligeable en temps
+    (fichiers < 50 Ko, déjà dans le cache OS après validate_csv).
+    Retourne 0 en cas d'erreur pour ne pas bloquer le lancement.
+    """
+    try:
+        return max(0, len(path.read_text(encoding="utf-8-sig", errors="replace").splitlines()) - 1)
+    except Exception:
+        return 0
+
+
+def _cleanup_runs():
+    """Tuer les sous-processus encore vivants à la fermeture du serveur Dash."""
+    for r in _runs.values():
+        try:
+            if r["proc"].poll() is None:
+                r["proc"].terminate()
+        except Exception:
+            pass
+
+atexit.register(_cleanup_runs)
 
 
 # ── Valeurs par défaut ───────────────────────────────────────────────────────
@@ -199,6 +223,8 @@ S = dict(
         "fontWeight": "600",
         "cursor": "pointer",
         "letterSpacing": "0.3px",
+        "whiteSpace": "nowrap",
+        "lineHeight": "1",
     },
     btn_sm={
         "background": "#f1f5f9",
@@ -220,6 +246,8 @@ S = dict(
         "fontSize": "14px",
         "fontWeight": "600",
         "cursor": "pointer",
+        "whiteSpace": "nowrap",
+        "lineHeight": "1",
     },
     btn_disabled={
         "background": "#94a3b8",
@@ -231,6 +259,8 @@ S = dict(
         "fontWeight": "600",
         "cursor": "not-allowed",
         "opacity": "0.7",
+        "whiteSpace": "nowrap",
+        "lineHeight": "1",
     },
     log={
         "fontFamily": "Consolas, 'Courier New', monospace",
@@ -663,12 +693,18 @@ def _build_layout() -> html.Div:
             style={"marginTop": "4px", "opacity": "0.4", "pointerEvents": "none", "userSelect": "none"},
         ),
 
-        # Bouton Lancer
+        # Bouton Lancer + Annuler
         html.Div([
             html.Button(
-                "▶  Lancer l'exécution",
+                "▶  Lancer",
                 id="run-btn", n_clicks=0, disabled=True,
                 style={**S["btn_disabled"], "fontSize": "15px", "padding": "12px 28px"},
+            ),
+            html.Button(
+                "■  Annuler",
+                id="cancel-btn", n_clicks=0, disabled=True,
+                style={**S["btn_disabled"], "fontSize": "15px", "padding": "12px 28px",
+                       "marginLeft": "10px"},
             ),
             html.Span("", id="run-status-badge", style={"marginLeft": "12px"}),
         ], style={"display": "flex", "alignItems": "center", "marginTop": "20px"}),
@@ -770,20 +806,31 @@ def browse_output(_):
 
 # ── Callback — Badge dossier d'entrée + activation bouton Run ─────────────────
 
+_CANCEL_BTN_ON  = {"background": "#dc2626", "color": "white", "border": "none",
+                   "borderRadius": "8px", "fontSize": "15px", "padding": "12px 28px",
+                   "fontWeight": "600", "cursor": "pointer", "marginLeft": "10px",
+                   "whiteSpace": "nowrap", "lineHeight": "1"}
+_CANCEL_BTN_OFF = {**S["btn_disabled"], "fontSize": "15px", "padding": "12px 28px",
+                   "marginLeft": "10px"}
+
 @app.callback(
     Output("input-badge", "children"),
     Output("input-badge", "style"),
     Output("run-btn", "disabled"),
     Output("run-btn", "style"),
+    Output("cancel-btn", "disabled"),
+    Output("cancel-btn", "style"),
     Input("input-dir", "value"),
     Input("run-state", "data"),
 )
 def update_input_badge(folder, run_state):
     running = run_state and run_state.get("active", False)
+    cancel_disabled = not running
+    cancel_style    = _CANCEL_BTN_ON if running else _CANCEL_BTN_OFF
     if not folder:
-        return "Aucun dossier sélectionné", S["badge_info"], True, {**S["btn_disabled"],
-                                                                      "fontSize": "15px",
-                                                                      "padding": "12px 28px"}
+        return ("Aucun dossier sélectionné", S["badge_info"],
+                True, {**S["btn_disabled"], "fontSize": "15px", "padding": "12px 28px"},
+                cancel_disabled, cancel_style)
     n = _count_csvs(folder)
     if n == 0:
         badge_text = "Aucun fichier CSV trouvé"
@@ -791,16 +838,13 @@ def update_input_badge(folder, run_state):
         disabled = True
         btn_style = {**S["btn_disabled"], "fontSize": "15px", "padding": "12px 28px"}
     else:
-        if n > 1:
-            badge_text = f"{n} fichiers CSV"
-        else:
-            badge_text = "1 fichier CSV"
+        badge_text  = f"{n} fichier{'s' if n > 1 else ''} CSV"
         badge_style = S["badge_ok"]
-        disabled = running
-        btn_style = ({**S["btn_disabled"], "fontSize": "15px", "padding": "12px 28px"}
-                     if running else
-                     {**S["btn_primary"], "fontSize": "15px", "padding": "12px 28px"})
-    return badge_text, badge_style, disabled, btn_style
+        disabled    = running
+        btn_style   = ({**S["btn_disabled"], "fontSize": "15px", "padding": "12px 28px"}
+                       if running else
+                       {**S["btn_primary"], "fontSize": "15px", "padding": "12px 28px"})
+    return badge_text, badge_style, disabled, btn_style, cancel_disabled, cancel_style
 
 
 # ── Callback — Badge dossier de sortie ────────────────────────────────────────
@@ -974,9 +1018,28 @@ def launch_run(n_clicks, run_state, input_dir, output_dir, multi_client, post_pr
     run_id = str(uuid.uuid4())
 
     # Input stems (sorted same way as main.py) + start timestamp for batch tracking.
-    import time
     input_stems = sorted(p.stem for p in Path(input_dir).glob("*.csv"))
     t_start     = time.time()
+
+    # ── Timeout mur : dérivé des budgets LNS × nombre de boîtes réelles ─────
+    # total_boxes borne le nombre de palettes (worst case : 1 boîte = 1 palette).
+    # Les fichiers viennent d'être validés → déjà dans le cache OS, lecture ~0 ms.
+    total_boxes = sum(
+        _count_csv_rows(Path(input_dir) / f"{stem}.csv")
+        for stem in input_stems
+    )
+    _lns_mono  = params.get("lns_mono_time_per_pallet",  DEFAULTS["lns_mono_time_per_pallet"])
+    _lns_multi = params.get("lns_multi_time_per_pallet", DEFAULTS["lns_multi_time_per_pallet"])
+    _pp        = params.get("pp_time_per_pallet",        DEFAULTS["pp_time_per_pallet"])
+    _time_per_palette = _lns_mono + _lns_multi + _pp        # budget LNS pur (s/palette)
+    _overhead_per_file = 60                                  # I/O, phases 0/6, démarrage
+    _safety = 5.0
+    _n_workers = max(1, int(max_workers) if max_workers else 1)
+    _max_seconds = (
+        (_time_per_palette * total_boxes + _overhead_per_file * len(input_stems))
+        / _n_workers * _safety
+    )
+    _max_seconds = max(300.0, _max_seconds)   # plancher : 5 min minimum
 
     creation_flags = subprocess.CREATE_NEW_CONSOLE if sys.platform == "win32" else 0
     proc = subprocess.Popen(cmd, creationflags=creation_flags)
@@ -985,6 +1048,7 @@ def launch_run(n_clicks, run_state, input_dir, output_dir, multi_client, post_pr
         "output_dir":  output_dir,
         "input_stems": input_stems,
         "t_start":     t_start,
+        "max_seconds": _max_seconds,
     }
 
     new_state = {"active": True, "run_id": run_id}
@@ -993,6 +1057,41 @@ def launch_run(n_clicks, run_state, input_dir, output_dir, multi_client, post_pr
     log_msg = (f"⟳  Exécution Batch 1/{total} : {first_file}\n"
                f"    Suivez la progression dans la fenêtre terminal.")
     return new_state, False, log_msg
+
+
+# ── Callback — Annulation de la run en cours ──────────────────────────────────
+
+@app.callback(
+    Output("run-state", "data", allow_duplicate=True),
+    Output("poll-interval", "disabled", allow_duplicate=True),
+    Output("log-display", "children", allow_duplicate=True),
+    Output("run-status-badge", "children", allow_duplicate=True),
+    Output("run-status-badge", "style", allow_duplicate=True),
+    Input("cancel-btn", "n_clicks"),
+    State("run-state", "data"),
+    prevent_initial_call=True,
+)
+def cancel_run(n_clicks, state):
+    if not n_clicks or not state or not state.get("active"):
+        return dash.no_update, dash.no_update, dash.no_update, dash.no_update, dash.no_update
+    run_id = state.get("run_id")
+    if not run_id or run_id not in _runs:
+        return {**state, "active": False}, True, "Processus déjà terminé.", "", {}
+    run  = _runs.pop(run_id)
+    proc = run["proc"]
+    if proc.poll() is None:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+    return (
+        {**state, "active": False},
+        True,
+        "⏹  Exécution annulée par l'utilisateur.",
+        "⏹  Annulé",
+        {**S["badge_warn"], "fontSize": "13px", "padding": "4px 12px"},
+    )
 
 
 # ── Callback — Polling du log de l'optimisation ───────────────────────────────
@@ -1018,6 +1117,28 @@ def poll_run(_, state):
     run = _runs[run_id]
     proc = run["proc"]
     done = proc.poll() is not None
+
+    # ── Timeout mur ──────────────────────────────────────────────────────────
+    if not done:
+        elapsed     = time.time() - run.get("t_start", 0)
+        max_seconds = run.get("max_seconds", 0)
+        if max_seconds > 0 and elapsed > max_seconds:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+            done = True
+            elapsed_min = int(elapsed // 60)
+            limit_min   = int(max_seconds // 60)
+            return (
+                {**state, "active": False},
+                True,
+                f"⚠️  Timeout — processus tué après {elapsed_min} min "
+                f"(limite calculée : {limit_min} min).",
+                f"✗  Timeout ({elapsed_min} min)",
+                {**S["badge_err"], "fontSize": "13px", "padding": "4px 12px"},
+            )
 
     new_state = {**state, "active": not done}
 
@@ -1126,6 +1247,7 @@ def poll_run(_, state):
             badge_text  = f"✗  {n_fail} échec(s) sur {total}"
             badge_style = {**S["badge_err"], "fontSize": "13px", "padding": "4px 12px"}
         log_msg = "\n".join(lines) if lines else "✓  Exécution terminée."
+        _runs.pop(run_id, None)   # libère la mémoire — toutes les données ont été lues
         return new_state, True, log_msg, badge_text, badge_style
     else:
         # No "running" marker yet? Add one for the first pending file so the

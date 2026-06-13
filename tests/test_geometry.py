@@ -1,4 +1,4 @@
-"""
+﻿"""
 Unit tests for utils/geometry.py
 
 Tests cover:
@@ -10,7 +10,7 @@ Tests cover:
 """
 
 import pytest
-from utils.geometry import (
+from pallet_optimizer.utils.geometry import (
     intervals_overlap,
     xy_overlap,
     xy_intersection_area,

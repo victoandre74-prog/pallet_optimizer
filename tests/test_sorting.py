@@ -1,4 +1,4 @@
-"""
+﻿"""
 Unit tests for heuristics/sorting.py
 
 Tests cover:
@@ -15,9 +15,9 @@ Tests cover:
 """
 
 import pytest
-from models.orientation import ALL_ORIENTATIONS, Orientation
-from models.box import Box
-from heuristics.sorting import sort_boxes_for_packing, sort_boxes_by_client
+from pallet_optimizer.models.orientation import ALL_ORIENTATIONS, Orientation
+from pallet_optimizer.models.box import Box
+from pallet_optimizer.heuristics.sorting import sort_boxes_for_packing, sort_boxes_by_client
 from tests.conftest import make_box
 
 

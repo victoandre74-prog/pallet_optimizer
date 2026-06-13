@@ -1,4 +1,4 @@
-"""
+﻿"""
 run_sweep.py — Parameter sweep for LNS time/iteration budgets.
 
 Runs the full pipeline (phases 1-4 + post-processing) for each configuration
@@ -29,17 +29,14 @@ if hasattr(sys.stderr, "reconfigure"):
 # ── Path setup ────────────────────────────────────────────────────────────────
 _DIR  = os.path.dirname(os.path.abspath(__file__))            # .../pallet_optimizer/dev/experiments/
 _ROOT = os.path.dirname(os.path.dirname(_DIR))                 # .../pallet_optimizer/ (git root)
-_SRC  = os.path.join(_ROOT, "src")
-if _SRC not in sys.path:
-    sys.path.insert(0, _SRC)
 
 import re
 import csv
 
-from config.parameters import OptimizationParameters
-from file_io.csv_reader import read_boxes_from_csv
-from optimizer.pallet_optimizer import optimize_palletization
-from heuristics.post_processing import postprocess
+from pallet_optimizer.config.parameters import OptimizationParameters
+from pallet_optimizer.file_io.csv_reader import read_boxes_from_csv
+from pallet_optimizer.optimizer.pallet_optimizer import optimize_palletization
+from pallet_optimizer.heuristics.post_processing import postprocess
 
 # ── Input ─────────────────────────────────────────────────────────────────────
 INPUT_DIR    = os.path.join(_ROOT, "dev", "data", "input", "SL18in")

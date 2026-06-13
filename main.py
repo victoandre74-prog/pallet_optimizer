@@ -1,4 +1,4 @@
-"""
+﻿"""
 main.py — Point d'entrée de l'optimiseur de palettisation.
 
 Ce fichier est le « lanceur » du programme. Il coordonne le traitement
@@ -48,15 +48,7 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-# ── Configuration du chemin Python ─────────────────────────────────────────────
-# Ajoute le répertoire du fichier courant au sys.path pour permettre les imports
-# relatifs depuis les sous-modules (config/, models/, etc.).
-_DIR = os.path.dirname(os.path.abspath(__file__))
-_SRC = os.path.join(_DIR, "src")
-if _SRC not in sys.path:
-    sys.path.insert(0, _SRC)
-
-from config.parameters import OptimizationParameters
+from pallet_optimizer.config.parameters import OptimizationParameters
 
 # Séparateur visuel pour les sections de log
 _SEP = "=" * 55
@@ -134,14 +126,14 @@ class _Tee:
 
 
 # ── Imports du pipeline (après la config du path) ──────────────────────────────
-from file_io.csv_reader import read_boxes_from_csv, validate_csv
-from file_io.csv_writer import write_results_to_csv
-from file_io.kpi_writer import compute_kpi_rows
-from optimizer.pallet_optimizer import optimize_palletization
-from heuristics.post_processing import postprocess
-from core.collision_detection import is_within_pallet, collides_with_any
-from core.stability_check import check_support_ratio, check_stack_stability
-from core.stacking_rules import check_stacking_rules
+from pallet_optimizer.file_io.csv_reader import read_boxes_from_csv, validate_csv
+from pallet_optimizer.file_io.csv_writer import write_results_to_csv
+from pallet_optimizer.file_io.kpi_writer import compute_kpi_rows
+from pallet_optimizer.optimizer.pallet_optimizer import optimize_palletization
+from pallet_optimizer.heuristics.post_processing import postprocess
+from pallet_optimizer.core.collision_detection import is_within_pallet, collides_with_any
+from pallet_optimizer.core.stability_check import check_support_ratio, check_stack_stability
+from pallet_optimizer.core.stacking_rules import check_stacking_rules
 
 
 def parse_args():
@@ -795,7 +787,7 @@ def main():
     new_kpi = {r["csv_name"]: r["kpi_rows"] for r in results if r.get("csv_name")}
     if new_kpi:
         try:
-            from file_io.kpi_writer import load_kpi_cache, save_kpi_cache, write_excel
+            from pallet_optimizer.file_io.kpi_writer import load_kpi_cache, save_kpi_cache, write_excel
             cache = load_kpi_cache(output_dir)
             cache.update(new_kpi)
             save_kpi_cache(cache, output_dir)

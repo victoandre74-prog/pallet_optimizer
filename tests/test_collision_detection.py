@@ -1,4 +1,4 @@
-"""
+﻿"""
 Unit tests for core/collision_detection.py
 
 Tests cover:
@@ -9,8 +9,8 @@ Tests cover:
 """
 
 import pytest
-from models.pallet import Pallet
-from core.collision_detection import (
+from pallet_optimizer.models.pallet import Pallet
+from pallet_optimizer.core.collision_detection import (
     is_within_pallet,
     collides_with_any,
     is_placement_geometrically_valid,

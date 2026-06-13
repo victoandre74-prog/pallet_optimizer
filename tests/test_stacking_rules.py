@@ -1,4 +1,4 @@
-"""
+﻿"""
 Unit tests for core/stacking_rules.py
 
 Tests cover:
@@ -16,7 +16,7 @@ Tests cover:
 """
 
 import pytest
-from core.stacking_rules import (
+from pallet_optimizer.core.stacking_rules import (
     get_supporting_boxes,
     can_place_on_floor,
     check_stacking_rules,

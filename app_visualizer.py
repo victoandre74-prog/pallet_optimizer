@@ -1,4 +1,4 @@
-"""
+﻿"""
 visualizer.py — App Dash unifiée du Visualiseur Palettes (port 8053).
 
 Page principale : sélection du dossier + 4 slots (Vue Multiple, Vue Zoom,
@@ -19,9 +19,6 @@ import threading
 import uuid
 
 _DIR = os.path.dirname(os.path.abspath(__file__))
-_SRC = os.path.join(_DIR, "src")
-if _SRC not in sys.path:
-    sys.path.insert(0, _SRC)
 
 
 def _load_logo(filename: str) -> str:
@@ -43,10 +40,11 @@ import dash
 from dash import dcc, html, Input, Output, State
 from flask import Response as _FlaskResponse
 
-from visualization.data     import load_pallet_data
-from visualization.renderer import build_client_color_map
-import visualization.view_palette as view_palette
-import visualization.view_kpi     as view_kpi
+from pallet_optimizer.visualization.data     import load_pallet_data
+from pallet_optimizer.visualization.renderer import build_client_color_map
+import pallet_optimizer.visualization.view_palette as view_palette
+import pallet_optimizer.visualization.view_kpi     as view_kpi
+import pallet_optimizer.visualization.exporter     as _exporter_mod
 
 _IS_DOCKER = os.environ.get("PALLET_HOST", "127.0.0.1") == "0.0.0.0"
 N_PER_PAGE = view_palette.N_PER_PAGE
@@ -150,7 +148,7 @@ def _start_kpi_build(output_dir: str) -> None:
 
     def _build():
         try:
-            from visualization.view_kpi import (
+            from pallet_optimizer.visualization.view_kpi import (
                 _load_kpi_cache, _load_all_results, _per_pallet_rows, _save_kpi_cache
             )
             from pathlib import Path
@@ -683,7 +681,7 @@ def build_app() -> dash.Dash:
             return dash.no_update, True, {"display": "none"}, ""
         img_dir = os.path.join(output_dir or os.path.dirname(csv_path), "pallet_images")
         os.makedirs(img_dir, exist_ok=True)
-        cmd = [sys.executable, os.path.join(_SRC, "visualization", "exporter.py"), csv_path, img_dir]
+        cmd = [sys.executable, _exporter_mod.__file__, csv_path, img_dir]
         creation_flags = subprocess.CREATE_NEW_CONSOLE if sys.platform == "win32" else 0
         proc = subprocess.Popen(cmd, creationflags=creation_flags)
         eid  = str(uuid.uuid4())

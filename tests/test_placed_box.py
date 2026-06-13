@@ -1,4 +1,4 @@
-"""
+﻿"""
 Unit tests for models/placed_box.py
 
 Tests cover:
@@ -10,8 +10,8 @@ Tests cover:
 """
 
 import pytest
-from models.orientation import Orientation
-from models.placed_box import PlacedBox
+from pallet_optimizer.models.orientation import Orientation
+from pallet_optimizer.models.placed_box import PlacedBox
 from tests.conftest import make_placed_box
 
 

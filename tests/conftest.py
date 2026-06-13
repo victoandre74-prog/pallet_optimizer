@@ -1,4 +1,4 @@
-"""
+﻿"""
 Shared pytest fixtures for the pallet_optimizer test suite.
 
 Test data is derived from real-world delivery routes
@@ -8,25 +8,13 @@ synthetic cases designed to exercise specific constraints.
 Pallet reference: 130 × 80 × 227 cm, 600 kg  (default OptimizationParameters)
 """
 
-import sys
-import os
-
-# Add the pallet_optimizer package directory to sys.path so tests can import
-# models, core, config, heuristics, utils directly.
-_TESTS = os.path.dirname(os.path.abspath(__file__))
-_ROOT  = os.path.dirname(_TESTS)
-_SRC   = os.path.join(_ROOT, "src")
-for _p in (_SRC, _ROOT):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
-
 import pytest
 
-from models.orientation import Orientation, ALL_ORIENTATIONS
-from models.box import Box
-from models.placed_box import PlacedBox
-from models.pallet import Pallet
-from config.parameters import OptimizationParameters
+from pallet_optimizer.models.orientation import Orientation, ALL_ORIENTATIONS
+from pallet_optimizer.models.box import Box
+from pallet_optimizer.models.placed_box import PlacedBox
+from pallet_optimizer.models.pallet import Pallet
+from pallet_optimizer.config.parameters import OptimizationParameters
 
 
 # ── Parameters ────────────────────────────────────────────────────────────────

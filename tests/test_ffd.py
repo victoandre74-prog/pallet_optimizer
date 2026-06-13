@@ -1,4 +1,4 @@
-"""
+﻿"""
 Integration tests for heuristics/first_fit_decreasing.py
 
 Tests cover the full FFD pipeline (placement_engine + collision + stability):
@@ -13,10 +13,10 @@ Tests cover the full FFD pipeline (placement_engine + collision + stability):
 """
 
 import pytest
-from models.pallet import Pallet
-from config.parameters import OptimizationParameters
-from heuristics.first_fit_decreasing import pack_boxes_ffd
-from heuristics.sorting import sort_boxes_for_packing
+from pallet_optimizer.models.pallet import Pallet
+from pallet_optimizer.config.parameters import OptimizationParameters
+from pallet_optimizer.heuristics.first_fit_decreasing import pack_boxes_ffd
+from pallet_optimizer.heuristics.sorting import sort_boxes_for_packing
 from tests.conftest import make_box
 
 
@@ -217,8 +217,8 @@ class TestFFDRealWorldSubset:
         Pack the first 4 P1 boxes of client 927184.
         All should be placed; no box duplicated.
         """
-        from models.orientation import Orientation
-        from models.box import Box
+        from pallet_optimizer.models.orientation import Orientation
+        from pallet_optimizer.models.box import Box
 
         def _make(box_id, L, W, H, wt, orients):
             o = [Orientation[s] for s in orients]
@@ -251,8 +251,8 @@ class TestFFDRealWorldSubset:
         Mix of P1 and P2 boxes.  P2 ergonomic limit applies (z ≤ 160 cm).
         All boxes must be placed.
         """
-        from models.orientation import Orientation, ALL_ORIENTATIONS
-        from models.box import Box
+        from pallet_optimizer.models.orientation import Orientation, ALL_ORIENTATIONS
+        from pallet_optimizer.models.box import Box
 
         p1 = Box(
             id="P1", priority=1, length=87.1, width=62.3, height=62.2, weight=31.6,
@@ -278,8 +278,8 @@ class TestFFDRealWorldSubset:
         The P2 box must be placed at z ≤ 160.
         """
         params = _params(priority2_max_deposit_height=160.0)
-        from models.orientation import Orientation, ALL_ORIENTATIONS
-        from models.box import Box
+        from pallet_optimizer.models.orientation import Orientation, ALL_ORIENTATIONS
+        from pallet_optimizer.models.box import Box
 
         p2 = Box(
             id="P2", priority=2, length=60.0, width=40.0, height=6.0, weight=2.0,
