@@ -829,6 +829,7 @@ def update_output_info(folder, _run_state):
     Output("poll-interval", "disabled"),
     Output("log-display", "children"),
     Input("run-btn", "n_clicks"),
+    State("run-state", "data"),
     State("input-dir", "value"),
     State("output-dir", "value"),
     State("toggle-multi-client", "value"),
@@ -876,7 +877,7 @@ def update_output_info(folder, _run_state):
     State("p-max-workers", "value"),
     prevent_initial_call=True,
 )
-def launch_run(n_clicks, input_dir, output_dir, multi_client, post_pro,
+def launch_run(n_clicks, run_state, input_dir, output_dir, multi_client, post_pro,
                pallet_length, pallet_width, pallet_max_height, pallet_max_weight,
                min_support_ratio, stability_ratio, priority2_max_deposit_height,
                min_filling_ratio, multi_client_minimum_ratio, multi_client_maximum_ratio,
@@ -891,6 +892,14 @@ def launch_run(n_clicks, input_dir, output_dir, multi_client, post_pro,
 
     if not n_clicks or not input_dir or not output_dir:
         return dash.no_update, True, dash.no_update
+
+    # Garde-fou double : rejet client (run-state) + rejet serveur (_runs).
+    # Le check client peut être contourné par des clics rapides avant propagation
+    # du disabled ; le check serveur est définitif car il interroge le process réel.
+    if run_state and run_state.get("active"):
+        return dash.no_update, dash.no_update, dash.no_update
+    if any(r["proc"].poll() is None for r in _runs.values()):
+        return dash.no_update, dash.no_update, "⚠️  Un batch est déjà en cours d'exécution."
 
     def _int(v): return int(v) if v is not None else None
 
